@@ -4,6 +4,7 @@ import { WorldMaterial, addSmoothNormals } from './WorldMaterial.js';
 import { buildRoundTree } from './Flora.js';
 import { Rng } from '../util/random.js';
 import { WORLD } from '../config.js';
+import { glowTexture } from '../util/PropMaterial.js';
 
 /** helper: primitive → coloured part */
 function part(geo, color, { tint = 0.5, jitter = 0, matrix = null, rng = null } = {}) {
@@ -31,10 +32,15 @@ const PAD = new THREE.Color('#4cbf5a');
 const PAD_FLOWER = new THREE.Color('#ff8fc0');
 const ISLET_ROCK = new THREE.Color('#8b6f5e');
 const ISLET_GRASS = new THREE.Color('#5fd36a');
+const _fv = new THREE.Vector3();
+const _fvel = new THREE.Vector3();
 
 /**
  * A little stone fountain in the pond: the visible source of the bubbles
- * and a constant sparkle of spray.
+ * and a constant sparkle of spray. It can be FED: every colour thrown or
+ * painted into the pond is remembered (`fed`), and each new one raises
+ * `level` so the spray gushes higher, a coloured mist grows above the top and
+ * bubbles in the fed colours rise from it. The pond play system hooks `app`.
  */
 export class Fountain {
   constructor(world, rng) {
@@ -59,6 +65,139 @@ export class Fountain {
     this.group.position.set(p.x, y, p.z);
     this.top = new THREE.Vector3(p.x, y + 1.85, p.z);
     this.shadowStamps = [{ x: p.x, z: p.z, r: 1.6, strength: 0.4 }];
+
+    // ---- feeding (play layer): the fountain remembers every colour the pond is given ----
+    this.app = null; // hooked by the pond system (fx, bubbles, rng, events)
+    this.fed = new Set(); // '#rrggbb' palette keys of the colours it has been fed
+    this.fedColors = []; // the same colours as THREE.Color, in feeding order
+    this.level = 0; // 0..1: how many colours (cap 12) — spray height, mist size, bubble rate
+    this.sprayAcc = 0;
+    this.bubbleT = 2;
+    this.mistT = 0;
+    this.mistIndex = 0;
+    this.mistColor = new THREE.Color('#ffffff');
+    this.mist = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTexture(), color: 0xffffff, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0 }));
+    this.mist.position.set(0, 2.2, 0); // group space: the group sits at the water level
+    this.mist.scale.set(0.001, 0.001, 1);
+    this.mist.visible = false;
+    this.mist.name = 'fountain-mist';
+    this.group.add(this.mist);
+  }
+
+  /** the palette colour nearest to `color`, as a key, so the 12-colour cap means the 12 orbs */
+  _key(color) {
+    const pal = this.app && this.app.paint ? this.app.paint.palette : null;
+    if (!pal) return '#' + color.getHexString();
+    let best = 0;
+    let bd = Infinity;
+    for (let i = 0; i < pal.length; i++) {
+      const c = pal[i];
+      const d = (c.r - color.r) ** 2 + (c.g - color.g) ** 2 + (c.b - color.b) ** 2;
+      if (d < bd) {
+        bd = d;
+        best = i;
+      }
+    }
+    return '#' + pal[best].getHexString();
+  }
+
+  /**
+   * Feed the fountain a colour. A new colour raises the level (cap 12) and, unless
+   * quiet (restoring a save), sends up a column of bubbles + a burst and emits `pondfeed`.
+   * Returns true when the colour was new.
+   */
+  feed(color, { quiet = false } = {}) {
+    const key = this._key(color);
+    const isNew = !this.fed.has(key);
+    if (isNew) {
+      this.fed.add(key);
+      this.fedColors.push(new THREE.Color(key));
+      this.level = Math.min(1, this.fed.size / 12);
+    }
+    const app = this.app;
+    if (quiet || !app) return isNew;
+    const top = this.top;
+    const level = this.level;
+    if (app.fx) {
+      app.fx.burst(top, color, Math.round(24 + level * 30), 1.5 + level * 2, 0.05);
+      app.fx.splash(top, color, 20, 2.5 + level * 2);
+    }
+    if (app.bubbles) {
+      // a column of eight bubbles in the fed colour climbs out of the top
+      const c = color.clone();
+      const rng = app.rng;
+      for (let k = 0; k < 8; k++) {
+        const rise = () => {
+          _fv.set(top.x + rng.gauss() * 0.1, top.y + 0.05, top.z + rng.gauss() * 0.1);
+          const i = app.bubbles.spawn(_fv, c, 0.06 + rng.float() * 0.09);
+          app.bubbles.vel[i].set(rng.gauss() * 0.25, 0.9 + k * 0.12 + level * 0.8, rng.gauss() * 0.25);
+        };
+        if (app.fx) app.fx.schedule(k * 0.09, rise);
+        else rise();
+      }
+    }
+    if (app.events) app.events.emit('pondfeed', { color: color.clone(), count: this.fed.size, isNew, level });
+    return isNew;
+  }
+
+  /** forget every colour (the painting was wiped / a new island) */
+  clearFed() {
+    this.fed.clear();
+    this.fedColors.length = 0;
+    this.level = 0;
+    this.sprayAcc = 0;
+    this.mist.visible = false;
+  }
+
+  /** spray, mist and the odd bubble — all growing with the level; run every frame by the pond system */
+  update(dt, time) {
+    const app = this.app;
+    const level = this.level;
+    if (!app || level <= 0 || this.fedColors.length === 0) {
+      this.mist.visible = false;
+      return;
+    }
+    const rng = app.rng;
+    const top = this.top;
+    const fx = app.fx;
+    // spray: sparkles and droplets shoot higher and thicker with every colour
+    if (fx) {
+      this.sprayAcc += dt * (4 + level * 20);
+      let guard = 0;
+      while (this.sprayAcc >= 1 && guard++ < 16) {
+        this.sprayAcc -= 1;
+        const c = this.fedColors[rng.int(0, this.fedColors.length - 1)];
+        _fv.set(top.x + rng.gauss() * 0.06, top.y + 0.05, top.z + rng.gauss() * 0.06);
+        _fvel.set(rng.gauss() * 0.5, 1.4 + level * 3.2 + rng.float() * 0.8, rng.gauss() * 0.5);
+        if (rng.chance(0.55)) fx.sparkle(_fv, _fvel, c, 0.8 + rng.float() * 0.7, 0.03 + level * 0.03);
+        else fx.bits.emit(_fv.x, _fv.y, _fv.z, _fvel.x * 0.6, _fvel.y * 1.1, _fvel.z * 0.6, c.r, c.g, c.b, app.time, 1.0 + level * 0.6, 0.03, 2, rng.float());
+      }
+    }
+    // mist: an additive haze above the top that grows with the level and cycles through the fed colours
+    const m = this.mist;
+    m.visible = true;
+    this.mistT -= dt;
+    if (this.mistT <= 0) {
+      this.mistT = 2.5;
+      this.mistIndex = (this.mistIndex + 1) % this.fedColors.length;
+    }
+    this.mistColor.lerp(this.fedColors[this.mistIndex % this.fedColors.length], 1 - Math.exp(-dt * 0.8));
+    m.material.color.copy(this.mistColor);
+    m.material.opacity = 0.18 + level * 0.32 + Math.sin(time * 2.1) * 0.04;
+    const h = 0.7 + level * 2.6;
+    m.scale.set(0.5 + level * 1.6, h, 1);
+    m.position.y = 1.85 + h * 0.35;
+    // ambient bubbles: only once fed, one every ~2 s, in the fed colours
+    if (app.bubbles) {
+      this.bubbleT -= dt;
+      if (this.bubbleT <= 0) {
+        this.bubbleT = 1.6 + rng.float() * 0.8;
+        const c = this.fedColors[rng.int(0, this.fedColors.length - 1)];
+        _fv.set(top.x + rng.gauss() * 0.12, top.y + 0.05, top.z + rng.gauss() * 0.12);
+        const i = app.bubbles.spawn(_fv, c, 0.07 + rng.float() * 0.1);
+        app.bubbles.vel[i].set(rng.gauss() * 0.15, 0.5 + level * 0.5, rng.gauss() * 0.15);
+      }
+    }
   }
 }
 
