@@ -17,6 +17,7 @@ import { Splats } from './fx/Splats.js';
 import { Audio } from './audio/Audio.js';
 import { Buddy } from './creatures/Buddy.js';
 import { Butterflies } from './creatures/Butterflies.js';
+import { Critters } from './creatures/Critters.js';
 import { Milestones } from './systems/Milestones.js';
 import { Toast } from './ui/Toast.js';
 import { Menu } from './ui/Menu.js';
@@ -117,6 +118,8 @@ export class App {
     this.hintPulse = false;
     // ---- play layer: the things to do (each is a self-contained system) ----
     // (systems register themselves here; order = update order)
+    this.critters = this.addSystem(new Critters(this));
+    this.scene.add(this.critters.group);
     // ---- end play layer ----
     this.intro = this.addSystem(new Intro(this));
     // compile every on-demand shader during the loading frames (no first-use hitches)
