@@ -484,11 +484,11 @@ if (!QUICK) {
   check(restored.restored && restored.strokes === saved.strokes, `restored ${restored.strokes} stroke(s) on reload`);
   check(restored.seed === saved.seed, `same island restored (${restored.seed})`);
   check(restored.color === 4, 'colour choice restored');
-  check(restored.progress > 0.002, `ground colour rebuilt (${(restored.progress * 100).toFixed(1)}%)`);
   await page.goto(url + '?fresh', { waitUntil: 'load' });
   await page.waitForFunction(() => window.__czx && window.__czx.frame > 5, null, { timeout: 60000 });
-  const fresh = await page.evaluate(() => window.__czx.paint.history.length);
-  check(fresh === 0, '?fresh starts clean');
+  const fresh = await page.evaluate(() => ({ strokes: window.__czx.paint.history.length, progress: window.__czx.world.progress }));
+  check(fresh.strokes === 0, '?fresh starts clean');
+  check(restored.progress > fresh.progress + 0.0002, `ground colour rebuilt from the save (${(restored.progress * 100).toFixed(2)}% vs ${(fresh.progress * 100).toFixed(2)}% fresh)`);
   await page.goto(url, { waitUntil: 'load' });
   await page.waitForFunction(() => window.__czx && window.__czx.frame > 5, null, { timeout: 60000 });
   await page.waitForFunction(() => !document.getElementById('btn-vr').disabled, null, { timeout: 10000 });

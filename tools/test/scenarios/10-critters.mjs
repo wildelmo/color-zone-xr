@@ -6,7 +6,7 @@
  */
 export const title = 'Sleepyheads (critters)';
 
-export async function run({ page, check, state }) {
+export async function run({ page, check, state, EYE, OUT }) {
   const info = await page.evaluate(() => {
     const a = window.__czx;
     const c = a.critters;
@@ -131,6 +131,24 @@ export async function run({ page, check, state }) {
   });
   check(!!follow, 'a bunny is awake');
   if (follow) check(follow.d1 < follow.d0 - 0.2 || follow.d1 <= 2.0, `the bunny came to sit by you (${follow.d0} → ${follow.d1} m, ${follow.hops} hops${follow.woken ? ', woken via API' : ''})`);
+  // a picture for the README: look at the bunny sitting by you
+  if (follow && EYE && OUT) {
+    await page.evaluate(async (idx) => {
+      const a = window.__czx;
+      const E = window.__xrEmu;
+      const b = a.critters.items[idx];
+      a.rig.updateWorldMatrix(true, false);
+      const local = a.rig.worldToLocal(b.pos.clone());
+      const dx = local.x;
+      const dy = local.y - 1.5;
+      const dz = local.z;
+      const yaw = Math.atan2(-dx, -dz);
+      const pitch = Math.atan2(dy, Math.hypot(dx, dz));
+      E.setHead([0, 1.5, 0], E.quatYawPitch(yaw, pitch));
+      await E.waitFrames(12);
+    }, follow.index);
+    await page.screenshot({ path: OUT + '/12-vr-sleepyheads.png', ...EYE });
+  }
 
   const s = await state(page);
   check(s.drawCalls < 190, `draw calls stay low with critters (${s.drawCalls} for both eyes)`);

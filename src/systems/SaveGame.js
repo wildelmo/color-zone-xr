@@ -150,7 +150,7 @@ export class SaveGame {
           const ci = single ? 0 : i * 3;
           c.setRGB(s.c[ci] / 255, s.c[ci + 1] / 255, s.c[ci + 2] / 255);
           entry.stroke.addPoint(p, s.r[i], c);
-          if (i % 5 === 0 && i < s.n - 2) map.stamp(p.x, p.z, 0.45 + s.r[i] * 6 + paint.sizeT * 0.6, c, 0.5, 0.85);
+          if (i % 5 === 0 && i < s.n - 2) map.stamp(p.x, p.z, 0.8 + s.r[i] * 8 + paint.sizeT * 1.0, c, 0.7, 0.85);
         }
         entry.stroke.ended = true; // caps were saved as points
         paint.endStroke(entry);

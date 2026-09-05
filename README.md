@@ -24,6 +24,10 @@ The title screen shows a little floating island in full colour. The moment you s
 
 The island is full of things that answer you. Nothing needs reading, nothing can fail, and every one of them uses the same four moves: paint, throw, poke, go.
 
+<p align="center">
+  <img src="docs/screenshots/12-vr-sleepyheads.png" width="60%" alt="A bunny, woken with orange paint, sits by your feet on the sketch island" />
+</p>
+
 - **Wake the sleepyheads.** A dozen pencil-sketch animals doze around the island with little *zzz*s floating up — bunnies, frogs and birds. Paint over one (or splat it) and it colours in with *your* colour, pops awake with a stretch, and starts living: bunnies hop after you and sit at your feet, frogs hop to the pond and ribbit when you poke them, birds fly to painted trees and sing. Poking a sleeper only makes it twitch — it needs colour.
 - **Follow Dot.** When you pause, Dot flies to the next thing worth colouring — a sleeper, a grey tree, the sketch pond — hovers over it with a pulsing beacon and calls you over. Finish it and the celebration happens right there: petals, confetti, a spin. Each wish reaches a little farther across the island.
 - **Poke everything.** Sweep your wand through the meadow and flowers, grass and mushrooms boing under your hand with a puff of colour and a buzz in the controller. Trees shiver and shed petals, rocks *bonk*, the fountain clonks and blows a ring of bubbles, the signpost wobbles, and Dot squeaks "Boop!" and scoots away.
