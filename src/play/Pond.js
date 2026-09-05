@@ -64,25 +64,8 @@ export class Pond {
 
   _registerSave() {
     const app = this.app;
-    const handler = { serialize: () => this.serialize(), restore: (d) => this.restore(d) };
-    if (app.saveGame) {
-      app.saveGame.register('pond', handler);
-      return;
-    }
-    // SaveGame is constructed (and loads) right after the play layer, so catch the
-    // assignment and register in time for its restore pass. Chains any earlier hook.
-    const prev = Object.getOwnPropertyDescriptor(app, 'saveGame');
-    let value = prev && !prev.get ? prev.value : undefined;
-    Object.defineProperty(app, 'saveGame', {
-      configurable: true,
-      enumerable: true,
-      get: () => (prev && prev.get ? prev.get.call(app) : value),
-      set: (v) => {
-        if (prev && prev.set) prev.set.call(app, v);
-        value = v;
-        if (v && typeof v.register === 'function') v.register('pond', handler);
-      },
-    });
+    if (!app.saveGame) return; // SaveGame is constructed before the play layer
+    app.saveGame.register('pond', { serialize: () => this.serialize(), restore: (d) => this.restore(d) });
   }
 
   serialize() {
