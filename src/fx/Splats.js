@@ -150,7 +150,8 @@ export class Splats {
     const p = b.mesh.position;
     const world = app.world;
     const speed = b.vel.length();
-    const r = 1.6 + Math.min(2.5, speed * 0.28);
+    let r = 1.6 + Math.min(2.5, speed * 0.28);
+    r *= Math.min(2, 1 + 0.15 * (b.charge || 0)); // charged balls (held long, rallied with Dot) splat bigger
     world.paintMap.stamp(p.x, p.z, r, b.color, 0.9, 0.7);
     if (app.fx) {
       app.fx.splash(p, b.color, 34, 2.4 + speed * 0.2);
@@ -241,7 +242,9 @@ export class Splats {
       if (held) {
         held.mesh.position.copy(hand.tip);
         held.shadow.update(held.mesh.position, 0.07, 2.5);
-        held.mesh.scale.setScalar(Math.min(1, held.mesh.scale.x + dt * 6));
+        // hold to charge: the longer you hold it, the bigger it grows (and the bigger it splats)
+        held.charge = Math.min(6, (held.charge || 0) + dt * 4);
+        held.mesh.scale.setScalar(Math.min(1 + 0.1 * held.charge, held.mesh.scale.x + dt * 6));
         held.mesh.quaternion.copy(hand.tipQuat);
         if (hand.squeezeReleased) {
           this.held[key] = null;

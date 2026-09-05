@@ -30,6 +30,7 @@ import { Guide } from './systems/Guide.js';
 import { Pond } from './play/Pond.js';
 import { Riders } from './creatures/Riders.js';
 import { Boops } from './play/Boops.js';
+import { Catch } from './play/Catch.js';
 
 /**
  * Color Zone XR — application root. Owns the renderer, the player rig,
@@ -121,6 +122,7 @@ export class App {
     this.hintPulse = false;
     // ---- play layer: the things to do (each is a self-contained system) ----
     // (systems register themselves here; order = update order)
+    this.catch = this.addSystemBefore(new Catch(this), this.splats); // before Splats: a catch consumes the squeeze before it would conjure
     this.boops = this.addSystem(new Boops(this)); // poke anything with the wand; paint balls hit things
     this.pond = this.addSystem(new Pond(this)); // the living pond: feed the fountain, koi, bubbles near you
     this.scene.add(this.pond.group);
