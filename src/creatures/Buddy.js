@@ -181,6 +181,41 @@ export class Buddy {
     if (app.fx) app.fx.burst(this.pos, this.color, 30, 1.2, 0.04);
   }
 
+  /**
+   * Poked with a wand tip (play/Boops.js): squash, spin, scoot away from the
+   * hand and squeak a word. Three boops within two seconds make Dot dizzy.
+   */
+  boop(hand = null) {
+    const app = this.app;
+    const time = app.time;
+    if (!this._boopT) this._boopT = [-9, -9, -9];
+    const bt = this._boopT;
+    bt[0] = bt[1];
+    bt[1] = bt[2];
+    bt[2] = time;
+    const dizzy = time - bt[0] < 2;
+    this.react(0.6);
+    this.squash = Math.min(1.6, this.squash + 1.2);
+    this.spinVel += dizzy ? 24 : 8;
+    // scoot 0.3 m away from whatever poked it (the damp in update floats it back)
+    _look.copy(this.pos);
+    if (hand && hand.tip) _look.sub(hand.tip);
+    else _look.sub(app.headPosition(_head));
+    _look.y = 0;
+    if (_look.lengthSq() < 1e-4) _look.set(0, 0, -1);
+    this.pos.addScaledVector(_look.normalize(), 0.3);
+    if (dizzy) {
+      this.wave = 2.2; // the wave code rolls the body back and forth: a dizzy wobble
+      this.setMood('surprised', 2.2);
+      this.say('Whoa... dizzy!', 2);
+    } else {
+      this.setMood('surprised', 0.4);
+      if (app.fx) app.fx.schedule(0.45, () => this.mood !== 'surprised' && this.setMood('happy', 1.4));
+      if (this.sayQueue.length < 2) this.say(app.rng.pick(['Boop!', 'Hehe!', 'That tickles!']), 1.2);
+    }
+    this.boops = (this.boops || 0) + 1;
+  }
+
   update(dt, time) {
     const app = this.app;
     const rng = app.rng;

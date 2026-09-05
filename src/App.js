@@ -26,6 +26,7 @@ import { HandVisual } from './input/HandVisual.js';
 import { Intro } from './systems/Intro.js';
 import { warmMaterials } from './util/Warmup.js';
 import { SaveGame } from './systems/SaveGame.js';
+import { Boops } from './play/Boops.js';
 
 /**
  * Color Zone XR — application root. Owns the renderer, the player rig,
@@ -117,6 +118,7 @@ export class App {
     this.hintPulse = false;
     // ---- play layer: the things to do (each is a self-contained system) ----
     // (systems register themselves here; order = update order)
+    this.boops = this.addSystem(new Boops(this)); // poke anything with the wand; paint balls hit things
     // ---- end play layer ----
     this.intro = this.addSystem(new Intro(this));
     // compile every on-demand shader during the loading frames (no first-use hitches)

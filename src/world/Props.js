@@ -53,12 +53,18 @@ export class Fountain {
     addSmoothNormals(geo);
     this.group = new THREE.Group();
     this.group.name = 'fountain';
-    this.mesh = new THREE.Mesh(geo, new WorldMaterial(shared, { flat: true, name: 'fountain' }));
-    this.outline = new THREE.Mesh(geo, new WorldMaterial(shared, { flat: true, outline: true, outlineWidth: 0.02, name: 'fountain-outline' }));
+    this.pokeT = { value: -1e9 }; // time of the last poke (Boops): the stonework wobbles for a moment
+    this.mesh = new THREE.Mesh(geo, new WorldMaterial(shared, { flat: true, name: 'fountain', pokeT: this.pokeT }));
+    this.outline = new THREE.Mesh(geo, new WorldMaterial(shared, { flat: true, outline: true, outlineWidth: 0.02, name: 'fountain-outline', pokeT: this.pokeT }));
     this.group.add(this.mesh, this.outline);
     this.group.position.set(p.x, y, p.z);
     this.top = new THREE.Vector3(p.x, y + 1.85, p.z);
     this.shadowStamps = [{ x: p.x, z: p.z, r: 1.6, strength: 0.4 }];
+  }
+
+  /** wobble the stonework (poked with a wand or hit by a paint ball) */
+  poke(time) {
+    this.pokeT.value = time;
   }
 }
 
