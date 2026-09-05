@@ -8,7 +8,7 @@ export const WORLD = {
   mapRes: 1024, // paint map texture resolution
   gridRes: 128, // CPU coverage grid used for gameplay checks
   eyeHeight: 1.6,
-  spawnZoneRadius: 2.6, // the little "colour zone" you start inside
+  spawnZoneRadius: 1.4, // the little "colour zone" you start inside (smaller than arm's reach so the first stroke reveals new ground)
   pond: { x: 11, z: -9, radius: 5.2 },
   sunDir: [0.42, 0.68, -0.6],
 };

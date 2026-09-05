@@ -8,7 +8,7 @@
  */
 import path from 'node:path';
 import fs from 'node:fs';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { loadPlaywright, launchArgs } from './pw.mjs';
 import { serve } from './server.mjs';
 
@@ -355,6 +355,22 @@ console.log('\n▶ Menu');
     window.__czx.menu.close();
     await window.__xrEmu.waitFrames(2);
   });
+}
+
+// feature scenarios: tools/test/scenarios/*.mjs export `run({ page, check, state, EYE, OUT, QUICK })`
+{
+  const dir = path.join(ROOT, 'tools', 'test', 'scenarios');
+  const files = fs.existsSync(dir) ? fs.readdirSync(dir).filter((f) => f.endsWith('.mjs')).sort() : [];
+  for (const f of files) {
+    const mod = await import(pathToFileURL(path.join(dir, f)).href);
+    if (typeof mod.run !== 'function') continue;
+    console.log(`\n▶ ${mod.title || f}`);
+    try {
+      await mod.run({ page, check, state, EYE, OUT, QUICK, ROOT });
+    } catch (err) {
+      check(false, `scenario ${f} threw: ${err && err.message ? err.message : err}`);
+    }
+  }
 }
 
 if (!QUICK) {

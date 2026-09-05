@@ -81,7 +81,9 @@ export class App {
     this.locomotionBusy = false;
     this.spreadEnergy = 0; // recent activity keeps colour spreading
     this.events.on('strokeend', () => this.bumpEnergy(0.3));
-    this.events.on('bubblepop', () => this.bumpEnergy(0.4));
+    this.events.on('bubblepop', (e) => {
+      if (e && e.byHand) this.bumpEnergy(0.4); // only the player's own pops keep the magic going
+    });
     this.events.on('splat', () => this.bumpEnergy(0.5));
 
     this.paint = new Paint(this);
@@ -113,6 +115,9 @@ export class App {
     this.handVisual = this.addSystem(new HandVisual(this));
     this.scene.add(this.handVisual.group);
     this.hintPulse = false;
+    // ---- play layer: the things to do (each is a self-contained system) ----
+    // (systems register themselves here; order = update order)
+    // ---- end play layer ----
     this.intro = this.addSystem(new Intro(this));
     // compile every on-demand shader during the loading frames (no first-use hitches)
     warmMaterials(this.scene, [
@@ -164,6 +169,14 @@ export class App {
 
   addSystem(sys) {
     this.systems.push(sys);
+    return sys;
+  }
+
+  /** insert a system so it updates before another one (e.g. catch before splats) */
+  addSystemBefore(sys, before) {
+    const i = this.systems.indexOf(before);
+    if (i < 0) this.systems.push(sys);
+    else this.systems.splice(i, 0, sys);
     return sys;
   }
 
@@ -331,6 +344,8 @@ export class App {
 
     this.hands.left.uiBlocked = false;
     this.hands.right.uiBlocked = false;
+    this.hands.left.grabBlocked = false;
+    this.hands.right.grabBlocked = false;
     this.palette.update(dt, this.time);
     this.locomotion.update(dt);
     for (const s of this.systems) s.update(dt, this.time);

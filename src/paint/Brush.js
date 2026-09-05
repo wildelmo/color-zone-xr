@@ -84,6 +84,11 @@ export class Brush {
     this.end();
   }
 
+  /** the colour this hand is painting with right now (rainbow brush cycles) */
+  currentColor(out) {
+    return this._color(out);
+  }
+
   _color(out) {
     const paint = this.app.paint;
     if (this.brushId === 'rainbow') {
@@ -218,8 +223,8 @@ export class Brush {
     if (this.groundAcc >= 0.12) {
       this.groundAcc = 0;
       const world = app.world;
-      const gr = 0.45 + r * 6 + app.paint.sizeT * 0.6;
-      world.paintMap.stamp(this.smooth.x, this.smooth.z, gr, _c, 0.5, 0.85);
+      const gr = 0.8 + r * 8 + app.paint.sizeT * 1.0;
+      world.paintMap.stamp(this.smooth.x, this.smooth.z, gr, _c, 0.7, 0.85);
       if (app.fx && app.rng.chance(0.35)) app.fx.drip(this.smooth, _c);
     }
   }

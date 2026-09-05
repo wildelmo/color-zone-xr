@@ -226,6 +226,8 @@ export class Flora {
     this.bloomers = [];
     this.shadowStamps = [];
     this.bloomedNow = [];
+    this.trees = []; // { x, z, y, s, species, canopyY, r, mesh, i }
+    this.rocks = []; // { x, z, y, s, r, mesh, i }
     this.build(seed);
   }
 
@@ -253,6 +255,8 @@ export class Flora {
     const R = WORLD.islandRadius;
     const spots = [];
     this.shadowStamps.length = 0;
+    this.trees.length = 0;
+    this.rocks.length = 0;
 
     const okSpot = (x, z, { minD = 1.2, margin = 3, maxSlope = 0.4, spacing = 0, waterMargin = 1.5 } = {}) => {
       if (!terrain.isOnIsland(x, z, margin)) return false;
@@ -276,9 +280,9 @@ export class Flora {
     const treeMat = new WorldMaterial(shared, { flat: true, wind: true, name: 'trees' });
     const treeOutline = new WorldMaterial(shared, { flat: true, wind: true, outline: true, outlineWidth: 0.035, name: 'trees-outline' });
     const species = [
-      { build: buildRoundTree, count: 34, scale: [0.8, 1.35], shadow: 1.5 },
-      { build: buildPineTree, count: 26, scale: [0.8, 1.3], shadow: 1.4 },
-      { build: buildCandyTree, count: 22, scale: [0.85, 1.25], shadow: 1.0 },
+      { id: 'round', build: buildRoundTree, count: 34, scale: [0.8, 1.35], shadow: 1.5, canopyY: 2.3, r: 1.4 },
+      { id: 'pine', build: buildPineTree, count: 26, scale: [0.8, 1.3], shadow: 1.4, canopyY: 2.2, r: 1.1 },
+      { id: 'candy', build: buildCandyTree, count: 22, scale: [0.85, 1.25], shadow: 1.0, canopyY: 2.0, r: 1.0 },
     ];
     for (const sp of species) {
       const geo = sp.build(rng);
@@ -289,9 +293,11 @@ export class Flora {
         const [x, z] = randomPos(5.5, R - 4);
         if (!okSpot(x, z, { minD: 5.5, margin: 4, maxSlope: 0.33, spacing: 3.6 })) continue;
         const s = rng.range(sp.scale[0], sp.scale[1]);
-        mesh.setMatrixAt(placed, trs(x, terrain.heightAt(x, z) - 0.15, z, s, s, s, rng.float() * Math.PI * 2));
+        const ty = terrain.heightAt(x, z) - 0.15;
+        mesh.setMatrixAt(placed, trs(x, ty, z, s, s, s, rng.float() * Math.PI * 2));
         spots.push([x, z]);
         this.shadowStamps.push({ x, z, r: sp.shadow * s, strength: 0.7 });
+        this.trees.push({ x, z, y: ty, s, species: sp.id, canopyY: ty + sp.canopyY * s, r: sp.r * s, mesh, i: placed });
         placed++;
       }
       mesh.count = outlineMesh.count = placed;
@@ -310,8 +316,10 @@ export class Flora {
         const [x, z] = randomPos(3, R - 2.5);
         if (!okSpot(x, z, { minD: 3, margin: 2.5, maxSlope: 0.6, waterMargin: -1 })) continue;
         const s = rng.range(0.25, 1.1);
-        mesh.setMatrixAt(placed, trs(x, terrain.heightAt(x, z) - s * 0.35, z, s, s * rng.range(0.6, 1), s, rng.float() * Math.PI * 2));
+        const ry = terrain.heightAt(x, z) - s * 0.35;
+        mesh.setMatrixAt(placed, trs(x, ry, z, s, s * rng.range(0.6, 1), s, rng.float() * Math.PI * 2));
         this.shadowStamps.push({ x, z, r: s * 1.1, strength: 0.4 });
+        this.rocks.push({ x, z, y: ry, s, r: s * 0.9, mesh, i: placed });
         placed++;
       }
       mesh.count = outlineMesh.count = placed;

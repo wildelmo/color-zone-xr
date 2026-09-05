@@ -41,7 +41,9 @@ export class HandState {
     this.rayDir = new THREE.Vector3(0, 0, -1);
     this.hasTip = false;
     this.uiBlocked = false;
+    this.grabBlocked = false; // a system already used this frame's squeeze (catch/grab) — don't conjure a ball
     this.locoBusy = false;
+    this.fist = false; // tracked hands: middle/ring/pinky curled (acts as the squeeze)
     this._pulseT = 0;
   }
 

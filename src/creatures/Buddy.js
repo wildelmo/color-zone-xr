@@ -100,12 +100,14 @@ export class Buddy {
     this.wave = 0;
     this.mood = 'idle';
     this.moodT = 0;
+    this.goal = null; // { pos, until } — a place Dot flies to for a while (visit)
     this.shadow = new BlobShadow(app, 0.16);
     this.group.add(this.shadow.mesh);
 
     const ev = app.events;
     ev.on('paintstart', () => this.react(0.5));
     ev.on('bubblepop', (e) => {
+      if (!e || !e.byHand) return; // bubbles dying of old age far away are not news
       this.react(0.9);
       this.setMood('happy', 1.2);
       this.spinVel += 14;
@@ -145,6 +147,21 @@ export class Buddy {
     this.moodT = duration;
   }
 
+  /** fly to a spot in the world for a few seconds (leading the player, showing something) */
+  visit(pos, seconds = 8) {
+    if (!this.goal) this.goal = { pos: new THREE.Vector3(), until: 0 };
+    this.goal.pos.copy(pos);
+    this.goal.until = this.app.time + seconds;
+  }
+
+  stopVisit() {
+    this.goal = null;
+  }
+
+  get visiting() {
+    return !!this.goal && this.app.time < this.goal.until;
+  }
+
   /** pop into view right in front of the player (intro) with a little wave */
   summon() {
     const app = this.app;
@@ -178,12 +195,14 @@ export class Buddy {
     // where it likes to hang out: front-left of the player, a little low
     _target.copy(_head).addScaledVector(_fwd, 1.15).addScaledVector(_right, -0.65);
     _target.y = _head.y - 0.2 + Math.sin(time * 1.3) * 0.05;
+    if (this.goal && time < this.goal.until) _target.copy(this.goal.pos);
+    else if (this.goal) this.goal = null;
     // stay above ground
     const gy = app.world.heightAt(_target.x, _target.z);
     if (_target.y < gy + 0.5) _target.y = gy + 0.5;
     // only chase when far away so it doesn't jitter with head motion
     const dist = this.pos.distanceTo(_target);
-    const lam = dist > 1.6 ? 3.2 : dist > 0.6 ? 1.6 : 0.6;
+    const lam = this.goal ? 2.2 : dist > 1.6 ? 3.2 : dist > 0.6 ? 1.6 : 0.6;
     this.pos.x = damp(this.pos.x, _target.x, lam, dt);
     this.pos.y = damp(this.pos.y, _target.y, lam, dt);
     this.pos.z = damp(this.pos.z, _target.z, lam, dt);

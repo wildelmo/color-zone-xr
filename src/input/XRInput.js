@@ -1,4 +1,8 @@
+import * as THREE from 'three';
 import { TIP_OFFSET } from './HandState.js';
+
+const _a = new THREE.Vector3();
+const _b = new THREE.Vector3();
 
 /**
  * Reads Meta Quest Touch controllers (xr-standard gamepad mapping) and
@@ -86,7 +90,25 @@ export class XRInput {
           hs.rayDir.set(0, 0, -1).transformDirection(slot.ray.matrixWorld);
         }
         hs.trigger = slot.pinching ? 1 : 0;
-        hs.squeeze = 0;
+        // a closed fist (middle/ring/pinky tips near the palm) acts as the squeeze so hands can hold and throw
+        const palm = joints['middle-finger-metacarpal'] || wrist;
+        if (palm) {
+          palm.updateWorldMatrix(true, false);
+          let sum = 0;
+          let n = 0;
+          for (const f of ['middle-finger-tip', 'ring-finger-tip', 'pinky-finger-tip']) {
+            const j = joints[f];
+            if (!j) continue;
+            j.updateWorldMatrix(true, false);
+            sum += _a.setFromMatrixPosition(j.matrixWorld).distanceTo(_b.setFromMatrixPosition(palm.matrixWorld));
+            n++;
+          }
+          if (n === 3) {
+            const d = sum / n;
+            hs.fist = hs.fist ? d < 0.075 : d < 0.06;
+          } else hs.fist = false;
+        } else hs.fist = false;
+        hs.squeeze = hs.fist ? 1 : 0;
         hs.stick.set(0, 0);
         hs.setButtons({});
       } else {
