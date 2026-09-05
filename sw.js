@@ -55,6 +55,8 @@ const ASSETS = [
   './src/input/HandVisual.js',
   './src/creatures/Buddy.js',
   './src/creatures/Butterflies.js',
+  './src/creatures/Riders.js',
+  './src/audio/RiderSounds.js',
   './src/systems/Milestones.js',
   './src/systems/SaveGame.js',
   './src/ui/Text.js',

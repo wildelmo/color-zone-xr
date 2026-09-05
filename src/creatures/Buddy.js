@@ -16,7 +16,7 @@ const _right = new THREE.Vector3();
 const _target = new THREE.Vector3();
 const _look = new THREE.Vector3();
 
-function dropGeometry() {
+export function dropGeometry() {
   const pts = [];
   const n = 18;
   for (let i = 0; i <= n; i++) {

@@ -26,6 +26,7 @@ import { HandVisual } from './input/HandVisual.js';
 import { Intro } from './systems/Intro.js';
 import { warmMaterials } from './util/Warmup.js';
 import { SaveGame } from './systems/SaveGame.js';
+import { Riders } from './creatures/Riders.js';
 
 /**
  * Color Zone XR — application root. Owns the renderer, the player rig,
@@ -117,6 +118,8 @@ export class App {
     this.hintPulse = false;
     // ---- play layer: the things to do (each is a self-contained system) ----
     // (systems register themselves here; order = update order)
+    this.riders = this.addSystem(new Riders(this));
+    this.scene.add(this.riders.group);
     // ---- end play layer ----
     this.intro = this.addSystem(new Intro(this));
     // compile every on-demand shader during the loading frames (no first-use hitches)
