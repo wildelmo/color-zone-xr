@@ -9,15 +9,22 @@ const desktopHelp = document.getElementById('desktop-help');
 const loading = document.getElementById('loading');
 
 const params = new URLSearchParams(location.search);
-const app = new App({ canvas, seed: params.get('seed') || 'color-zone', params });
+let app;
+try {
+  app = new App({ canvas, seed: params.get('seed') || 'color-zone', params });
+} catch (err) {
+  console.error('Color Zone failed to start', err);
+  if (window.__czxFail) window.__czxFail(err && err.message ? err.message : String(err));
+  throw err;
+}
 window.__czx = app;
+loading.classList.add('hidden');
 
 function showOverlay(show) {
   overlay.classList.toggle('hidden', !show);
 }
 
 app.isVRSupported().then((ok) => {
-  loading.classList.add('hidden');
   if (ok) {
     btnVR.disabled = false;
     hint.textContent = 'Headset found. Put it on and press Enter VR.';

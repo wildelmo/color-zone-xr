@@ -88,7 +88,7 @@
 <body>
   <canvas id="scene"></canvas>
 
-  <div id="loading"><div><div class="spinner"></div>Mixing the paint…</div></div>
+  <div id="loading"><div><div class="spinner"></div><span id="loading-text">Mixing the paint…</span><div id="loading-detail"></div></div></div>
 
   <div id="overlay">
     <div class="card">
@@ -117,6 +117,47 @@
     <b>Click</b> look · <b>WASD</b> walk · <b>Left mouse</b> paint · <b>Right mouse</b> throw · <b>Wheel</b> size · <b>Tab</b> brush · <b>1–9</b> colours · <b>Z</b> undo · <b>M</b> menu · <b>Esc</b> back
   </div>
 
-  <script type="module" src="./src/main.js"></script>
+  <script>
+    // Boot watchdog. If the app has not started (a stale cache after an update,
+    // an unsupported browser, a blocked script), do not leave a spinner forever:
+    // clear caches + service workers and reload once, then show a retry message.
+    (function () {
+      var text = document.getElementById('loading-text');
+      var detail = document.getElementById('loading-detail');
+      var failed = false;
+      function healOnce() {
+        var key = 'czx:healed';
+        var tried = false;
+        try { tried = sessionStorage.getItem(key) === '1'; } catch (e) {}
+        if (tried) return false;
+        try { sessionStorage.setItem(key, '1'); } catch (e) {}
+        var work = [];
+        if (navigator.serviceWorker && navigator.serviceWorker.getRegistrations) {
+          work.push(navigator.serviceWorker.getRegistrations().then(function (rs) { return Promise.all(rs.map(function (r) { return r.unregister(); })); }));
+        }
+        if (window.caches && caches.keys) work.push(caches.keys().then(function (ks) { return Promise.all(ks.map(function (k) { return caches.delete(k); })); }));
+        Promise.all(work).catch(function () {}).then(function () { location.reload(); });
+        return true;
+      }
+      window.__czxFail = function (msg) {
+        if (failed) return;
+        failed = true;
+        if (healOnce()) {
+          text.textContent = 'Refreshing the paint…';
+          return;
+        }
+        text.textContent = 'Hmm, the paint would not mix.';
+        detail.innerHTML = (msg ? '<div style="font:500 12px system-ui;color:#8a7fa6;margin:8px auto 14px;max-width:420px;word-break:break-word">' + String(msg).replace(/</g, '&lt;') + '</div>' : '') +
+          '<button onclick="location.reload()" style="font:800 15px system-ui;color:#fff;background:linear-gradient(135deg,#ff6ad5,#a05cff);border:0;border-radius:999px;padding:12px 22px;cursor:pointer">Try again</button>' +
+          '<div style="font:500 12px system-ui;color:#8a7fa6;margin-top:10px">Needs a modern browser with WebGL 2 — Meta Quest Browser, Chrome, Edge, Firefox or Safari 16+.</div>';
+      };
+      window.addEventListener('error', function (e) { if (!window.__czx) window.__czxFail(e.message || 'Script error'); });
+      window.addEventListener('unhandledrejection', function (e) { if (!window.__czx) window.__czxFail((e.reason && e.reason.message) || String(e.reason)); });
+      setTimeout(function () { if (!window.__czx) window.__czxFail('The app did not start within 20 seconds.'); }, 20000);
+      // a healthy boot clears the one-time heal flag so a later failure can heal again
+      var poll = setInterval(function () { if (window.__czx) { clearInterval(poll); try { sessionStorage.removeItem('czx:healed'); } catch (e) {} } }, 500);
+    })();
+  </script>
+  <script type="module" src="./src/main.js" onerror="window.__czxFail && window.__czxFail('Could not load the app script (src/main.js).')"></script>
 </body>
 </html>
