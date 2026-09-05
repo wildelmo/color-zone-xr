@@ -8,10 +8,13 @@ import { WORLD } from '../config.js';
  * Procedural low-poly plants and rocks. Trees/rocks are always present
  * (sketched, then coloured) and wear a graphite outline. Flowers, grass
  * tufts and mushrooms are hidden until colour reaches them, then pop up
- * with an elastic bounce (popT). Everything is instanced.
+ * with an elastic bounce (popT). Trees and rocks carry a pokeT attribute (the
+ * time something poked them) so they wobble when touched — see play/Boops.js.
+ * Everything is instanced.
  */
 
 const HIDDEN = 1e9;
+const STILL = -1e9; // pokeT for "never poked"
 
 /** turn a primitive into a paintable part with colour/tint/sway attributes */
 function part(geo, color, { tint = 0.6, sway = 0, jitter = 0, matrix = null, swayByHeight = false, rng = null, upNormals = false } = {}) {
@@ -277,8 +280,8 @@ export class Flora {
       return [Math.cos(a) * r, Math.sin(a) * r];
     };
 
-    const treeMat = new WorldMaterial(shared, { flat: true, wind: true, name: 'trees' });
-    const treeOutline = new WorldMaterial(shared, { flat: true, wind: true, outline: true, outlineWidth: 0.035, name: 'trees-outline' });
+    const treeMat = new WorldMaterial(shared, { flat: true, wind: true, poke: true, name: 'trees' });
+    const treeOutline = new WorldMaterial(shared, { flat: true, wind: true, poke: true, outline: true, outlineWidth: 0.035, name: 'trees-outline' });
     const species = [
       { id: 'round', build: buildRoundTree, count: 34, scale: [0.8, 1.35], shadow: 1.5, canopyY: 2.3, r: 1.4 },
       { id: 'pine', build: buildPineTree, count: 26, scale: [0.8, 1.3], shadow: 1.4, canopyY: 2.2, r: 1.1 },
@@ -287,6 +290,8 @@ export class Flora {
     for (const sp of species) {
       const geo = sp.build(rng);
       const { mesh, outlineMesh } = this._instanced(geo, treeMat, sp.count, 'trees', treeOutline);
+      const pokeT = new THREE.InstancedBufferAttribute(new Float32Array(sp.count).fill(STILL), 1).setUsage(THREE.DynamicDrawUsage);
+      geo.setAttribute('pokeT', pokeT); // shared with the outline mesh, so both wobble together
       let placed = 0;
       let tries = 0;
       while (placed < sp.count && tries++ < 4000) {
@@ -297,19 +302,21 @@ export class Flora {
         mesh.setMatrixAt(placed, trs(x, ty, z, s, s, s, rng.float() * Math.PI * 2));
         spots.push([x, z]);
         this.shadowStamps.push({ x, z, r: sp.shadow * s, strength: 0.7 });
-        this.trees.push({ x, z, y: ty, s, species: sp.id, canopyY: ty + sp.canopyY * s, r: sp.r * s, mesh, i: placed });
+        this.trees.push({ x, z, y: ty, s, species: sp.id, canopyY: ty + sp.canopyY * s, r: sp.r * s, mesh, i: placed, pokeT });
         placed++;
       }
       mesh.count = outlineMesh.count = placed;
       mesh.instanceMatrix.needsUpdate = true;
     }
 
-    const rockMat = new WorldMaterial(shared, { flat: true, name: 'rocks' });
-    const rockOutline = new WorldMaterial(shared, { flat: true, outline: true, outlineWidth: 0.02, name: 'rocks-outline' });
+    const rockMat = new WorldMaterial(shared, { flat: true, poke: true, name: 'rocks' });
+    const rockOutline = new WorldMaterial(shared, { flat: true, poke: true, outline: true, outlineWidth: 0.02, name: 'rocks-outline' });
     {
       const geo = buildRock(rng);
       const count = 48;
       const { mesh, outlineMesh } = this._instanced(geo, rockMat, count, 'rocks', rockOutline);
+      const pokeT = new THREE.InstancedBufferAttribute(new Float32Array(count).fill(STILL), 1).setUsage(THREE.DynamicDrawUsage);
+      geo.setAttribute('pokeT', pokeT);
       let placed = 0;
       let tries = 0;
       while (placed < count && tries++ < 3000) {
@@ -319,7 +326,7 @@ export class Flora {
         const ry = terrain.heightAt(x, z) - s * 0.35;
         mesh.setMatrixAt(placed, trs(x, ry, z, s, s * rng.range(0.6, 1), s, rng.float() * Math.PI * 2));
         this.shadowStamps.push({ x, z, r: s * 1.1, strength: 0.4 });
-        this.rocks.push({ x, z, y: ry, s, r: s * 0.9, mesh, i: placed });
+        this.rocks.push({ x, z, y: ry, s, r: s * 0.9, mesh, i: placed, pokeT });
         placed++;
       }
       mesh.count = outlineMesh.count = placed;

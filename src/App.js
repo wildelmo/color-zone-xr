@@ -29,6 +29,7 @@ import { SaveGame } from './systems/SaveGame.js';
 import { Guide } from './systems/Guide.js';
 import { Pond } from './play/Pond.js';
 import { Riders } from './creatures/Riders.js';
+import { Boops } from './play/Boops.js';
 
 /**
  * Color Zone XR — application root. Owns the renderer, the player rig,
@@ -120,6 +121,7 @@ export class App {
     this.hintPulse = false;
     // ---- play layer: the things to do (each is a self-contained system) ----
     // (systems register themselves here; order = update order)
+    this.boops = this.addSystem(new Boops(this)); // poke anything with the wand; paint balls hit things
     this.pond = this.addSystem(new Pond(this)); // the living pond: feed the fountain, koi, bubbles near you
     this.scene.add(this.pond.group);
     this.riders = this.addSystem(new Riders(this)); // little paint drops ride your long strokes

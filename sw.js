@@ -49,6 +49,7 @@ const ASSETS = [
   './src/play/Pond.js',
   './src/audio/Audio.js',
   './src/audio/PondSounds.js',
+  './src/audio/BoopSounds.js',
   './src/input/HandState.js',
   './src/input/XRInput.js',
   './src/input/DesktopInput.js',
@@ -68,6 +69,7 @@ const ASSETS = [
   './src/ui/Toast.js',
   './src/ui/Menu.js',
   './src/ui/HelpSign.js',
+  './src/play/Boops.js',
 ];
 
 self.addEventListener('install', (event) => {
