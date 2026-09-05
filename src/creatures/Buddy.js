@@ -94,6 +94,7 @@ export class Buddy {
     this.squash = 0;
     this.idleT = 0;
     this.hintT = 12;
+    this.autoHints = true; // generic idle hints; a guide system sets this false and hints situationally instead
     this.sayQueue = [];
     this.yaw = 0;
     this.lookAtTip = 0;
@@ -313,7 +314,7 @@ export class Buddy {
     // gentle nudges if the player is idle
     this.idleT += dt;
     this.hintT -= dt;
-    if (this.hintT <= 0 && !painting) {
+    if (this.autoHints && this.hintT <= 0 && !painting) {
       this.hintT = 22 + rng.float() * 10;
       this.react(0.6);
       const p = app.world.progress;
