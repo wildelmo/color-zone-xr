@@ -372,7 +372,10 @@ export class Riders {
     _p.copy(rail.end).addScaledVector(_up, rail.radii[n - 1] + 0.03);
     _v.copy(_t).multiplyScalar(r.v * 1.2);
     _v.y += 1.2;
-    if (app.splats && app.splats.launch) app.splats.launch(_p, _v, r.color, { scale: 0.7 });
+    if (app.splats && app.splats.launch) {
+      const ball = app.splats.launch(_p, _v, r.color, { scale: 0.7 });
+      if (ball) ball.rider = true; // Dot doesn't comment on every rider landing
+    }
     if (app.fx) app.fx.burst(_p, r.color, 10, 1.0, 0.03);
     if (this._audible(_p)) whoop(app.audio, _p, r.v);
     this.launches++;

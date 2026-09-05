@@ -89,7 +89,7 @@ export class App {
     this.events.on('bubblepop', (e) => {
       if (e && e.byHand) this.bumpEnergy(0.4); // only the player's own pops keep the magic going
     });
-    this.events.on('splat', () => this.bumpEnergy(0.5));
+    this.events.on('splat', (e) => this.bumpEnergy(e && e.ball && e.ball.rider ? 0.2 : 0.5));
 
     this.paint = new Paint(this);
     this.scene.add(this.paint.group);

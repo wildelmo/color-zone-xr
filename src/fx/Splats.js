@@ -162,7 +162,7 @@ export class Splats {
     this._placeDecal(p.x, p.z, r, b.color, app.rng.float(), app.time);
     if (app.audio) app.audio.splat(speed, p);
     this.splatCount++;
-    app.events.emit('splat', { position: p.clone(), color: b.color.clone(), radius: r });
+    app.events.emit('splat', { position: p.clone(), color: b.color.clone(), radius: r, ball: b });
     // pop bubbles nearby
     if (app.bubbles) {
       for (let k = 0; k < app.bubbles.capacity; k++) {

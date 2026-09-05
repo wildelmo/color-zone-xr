@@ -114,7 +114,11 @@ export class Buddy {
       this.spinVel += 14;
       if (e.byHand) this.say(this.app.rng.pick(['Pop!', 'Nice one!', 'Wheee!', 'Got it!']), 1.4);
     });
-    ev.on('splat', () => {
+    ev.on('splat', (e) => {
+      if (e && e.ball && e.ball.rider) {
+        this.react(0.3); // a rider landing is fun but not news every time
+        return;
+      }
       this.react(1);
       this.spinVel += 10;
       this.say(this.app.rng.pick(['Splat!', 'Whoa!', 'So messy!', 'Love it!']), 1.6);
