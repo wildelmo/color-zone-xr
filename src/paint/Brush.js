@@ -215,10 +215,6 @@ export class Brush {
     const speed = h.tipVel.length();
     h.tick(0.08 + Math.min(0.25, speed * 0.08), 40);
     if (app.audio) app.audio.brushMotion(speed, this.smooth.y);
-    if (this.noteAcc >= 0.11) {
-      this.noteAcc = 0;
-      if (app.audio) app.audio.paintNote(this.smooth.y, _c, this.brushId);
-    }
     if (this.groundAcc >= 0.12) {
       this.groundAcc = 0;
       const world = app.world;

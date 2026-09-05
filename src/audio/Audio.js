@@ -1,8 +1,8 @@
 /**
- * Procedural sound design with Web Audio — no audio files. A warm ambient pad
- * that brightens as the world fills with colour, pentatonic chimes that
- * follow your brush height (so every painting is a melody), a velocity
- * "whoosh", and playful pops, splats and fanfares. Gentle levels for kids.
+ * Procedural sound design with Web Audio — no audio files, and no background
+ * music. The brush makes a soft whoosh that follows your hand speed; pops,
+ * splats, blooms and fanfares are short and positioned in 3D around you.
+ * Levels are kept gentle for kids.
  */
 const PENTA = [];
 {
@@ -79,41 +79,6 @@ export class Audio {
     this.reverbGain.gain.value = 0.42;
     this.reverb.connect(this.reverbGain);
     this.reverbGain.connect(this.master);
-
-    // ambient pad
-    this.padGain = ctx.createGain();
-    this.padGain.gain.value = 0.0;
-    this.padFilter = ctx.createBiquadFilter();
-    this.padFilter.type = 'lowpass';
-    this.padFilter.frequency.value = 420;
-    this.padFilter.Q.value = 0.7;
-    this.padFilter.connect(this.padGain);
-    this.padGain.connect(this.master);
-    this.padGain.connect(this.reverb);
-    this.padOscs = [];
-    const chord = [130.81, 196.0, 261.63, 329.63, 392.0];
-    chord.forEach((f, i) => {
-      for (const det of [-4, 4]) {
-        const o = ctx.createOscillator();
-        o.type = i < 2 ? 'triangle' : 'sine';
-        o.frequency.value = f;
-        o.detune.value = det + (i % 2 ? 2 : -2);
-        const g = ctx.createGain();
-        g.gain.value = i < 3 ? 0.5 : 0.0;
-        o.connect(g);
-        g.connect(this.padFilter);
-        o.start();
-        this.padOscs.push({ o, g, i });
-      }
-    });
-    this.padLfo = ctx.createOscillator();
-    this.padLfo.frequency.value = 0.07;
-    this.padLfoGain = ctx.createGain();
-    this.padLfoGain.gain.value = 140;
-    this.padLfo.connect(this.padLfoGain);
-    this.padLfoGain.connect(this.padFilter.frequency);
-    this.padLfo.start();
-    this.padGain.gain.setTargetAtTime(0.11, ctx.currentTime, 2.5);
 
     // whoosh: looped noise through a bandpass
     const nlen = ctx.sampleRate * 2;
@@ -287,27 +252,12 @@ export class Audio {
     return PENTA[i];
   }
 
-  /** a chime as the brush travels; pitch follows height */
-  paintNote(y, color, brushId) {
-    if (!this.ready) return;
-    const now = this.ctx.currentTime;
-    if (now - this.lastNote < 0.07) return;
-    this.lastNote = now;
-    const f = this._noteForHeight(y, brushId === 'sparkle' ? 5 : brushId === 'cotton' ? -5 : 0);
-    if (brushId === 'cotton') {
-      this._tone(f, { type: 'sine', attack: 0.03, decay: 0.7, gain: 0.09, reverb: 0.7 });
-    } else if (brushId === 'sparkle') {
-      this._tone(f, { type: 'sine', attack: 0.003, decay: 0.5, gain: 0.07, reverb: 0.8 });
-      this._tone(f * 3.01, { type: 'sine', attack: 0.003, decay: 0.25, gain: 0.025, reverb: 0.8 });
-    } else {
-      this._tone(f, { type: 'sine', attack: 0.004, decay: 0.45, gain: 0.09, reverb: 0.6 });
-      this._tone(f * 2, { type: 'triangle', attack: 0.004, decay: 0.2, gain: 0.02, reverb: 0.6 });
-    }
-  }
+  /** painting is silent apart from the whoosh (the chimes were annoying) */
+  paintNote() {}
 
   /** continuous brush whoosh driven by hand speed */
   brushMotion(speed, y) {
-    this.whooshTarget = Math.min(0.14, speed * 0.06);
+    this.whooshTarget = Math.min(0.18, speed * 0.075);
     this.whooshFreq = 500 + Math.min(1, y / 2.2) * 900 + speed * 60;
     this._motionT = 0.12;
   }
@@ -372,10 +322,10 @@ export class Audio {
   bloom(pos = null) {
     if (!this.ready) return;
     const now = this.ctx.currentTime;
-    if (now - this.lastBloom < 0.09) return;
+    if (now - this.lastBloom < 0.25) return;
     this.lastBloom = now;
-    const f = PENTA[8 + Math.floor(Math.random() * 6)];
-    this._tone(f, { type: 'sine', attack: 0.003, decay: 0.3, gain: 0.04, reverb: 0.8, pos });
+    const f = 260 + Math.random() * 120;
+    this._tone(f, { type: 'sine', attack: 0.004, decay: 0.09, gain: 0.02, sweepTo: f * 1.6, sweepTime: 0.07, reverb: 0.3, pos });
   }
 
   milestone(level = 0) {
@@ -417,13 +367,6 @@ export class Audio {
   update(dt) {
     if (!this.ready) return;
     const ctx = this.ctx;
-    const t = this.app.world.worldColor;
-    // brighten the pad as colour returns
-    this.padFilter.frequency.setTargetAtTime(380 + t * 1500, ctx.currentTime, 0.5);
-    for (const p of this.padOscs) {
-      const target = p.i < 3 ? 0.5 : p.i === 3 ? t * 0.45 : Math.max(0, t - 0.5) * 0.7;
-      p.g.gain.setTargetAtTime(target, ctx.currentTime, 1.0);
-    }
     this._motionT -= dt;
     if (this._motionT <= 0) this.whooshTarget = 0;
     this.whooshGain.gain.setTargetAtTime(this.whooshTarget, ctx.currentTime, 0.04);

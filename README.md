@@ -20,7 +20,7 @@ The title screen shows a little floating island in full colour. The moment you s
 - **Meet Dot.** A little paint-drop buddy floats at your side, cheers when you paint, spins when bubbles pop, takes on your colour and offers hints if you get stuck.
 - **Bring the whole world back.** At 25% butterflies arrive. At 50% a rainbow rises. At 75% the sun starts smiling. Paint it all and the sky fills with fireworks.
 
-Everything is procedural: the island, plants, clouds, particles, the music and every sound are generated in code, so the whole experience is ~1 MB and works offline as an installable app.
+Everything is procedural: the island, plants, clouds, particles and every sound are generated in code, so the whole experience is ~1 MB and works offline as an installable app.
 
 <p align="center">
   <img src="docs/screenshots/03-vr-start.png" width="32%" alt="Dot says hello on the full-colour title island" />
@@ -89,7 +89,7 @@ src/
     WorldMaterial.js  one shader for the environment — samples the paint map and reveals colour
   paint/              PaintMap (top-down colour render target), strokes, brushes, palette, wand
   fx/                 GPU particle pool, bubbles, thrown paint + splat decals
-  audio/              procedural Web Audio: pad, pentatonic chimes, pops, fanfares
+  audio/              procedural Web Audio: brush whoosh, pops, splats, fanfares
   input/              Quest controllers + hand tracking, desktop fallback, locomotion
   creatures/          Dot the buddy, butterflies
   systems/            milestones, auto-save
@@ -106,7 +106,7 @@ A few of the tricks that make it feel good:
 - **Blooming plants.** Thousands of instanced flowers, grass tufts and mushrooms start at scale zero and pop with an elastic bounce (in the vertex shader) when colour reaches them.
 - **Silky strokes.** Tubes are extruded incrementally with parallel-transported frames, through a Catmull-Rom spline that lags one sample behind the hand, so fast scribbles stay smooth at any frame rate. Finished strokes are merged into batches to keep draw calls low.
 - **GPU particles.** The CPU writes a particle's spawn state once; the shader integrates motion from time. Drips even know when they'll land so the ground splashes exactly on impact.
-- **Music that follows you.** Chimes are pitched by the height of your hand on a pentatonic scale, so any painting is a melody, and the ambient pad brightens as the world fills with colour. Pops, splats, blooms and the fountain are positioned in 3D around you.
+- **Sound that sits in the world.** The brush whooshes with your hand speed; pops, splats, blooms and the fountain are positioned in 3D around you. No background music, by design.
 
 ## Testing
 
