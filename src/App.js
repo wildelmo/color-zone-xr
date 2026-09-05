@@ -26,11 +26,8 @@ import { HandVisual } from './input/HandVisual.js';
 import { Intro } from './systems/Intro.js';
 import { warmMaterials } from './util/Warmup.js';
 import { SaveGame } from './systems/SaveGame.js';
-<<<<<<< HEAD
 import { Guide } from './systems/Guide.js';
-=======
 import { Pond } from './play/Pond.js';
->>>>>>> play/pond
 
 /**
  * Color Zone XR — application root. Owns the renderer, the player rig,
