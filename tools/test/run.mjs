@@ -140,6 +140,15 @@ check(s.presenting && s.mode === 'xr', 'XR session presenting');
 check(await page.evaluate(() => window.__czx.hands.left.connected && window.__czx.hands.right.connected), 'both controllers connected');
 check(s.audio, 'audio engine started');
 await page.screenshot({ path: path.join(OUT, '03-vr-start.png'), ...EYE });
+const intro = await page.evaluate(() => ({ started: window.__czx.intro.started, phase: window.__czx.intro.phase, force: window.__czx.world.uniforms.forceColor.value }));
+check(intro.started && intro.phase === 'story', 'opening story started');
+check(intro.force > 0.5, 'world shown in full colour before the drain');
+// the emulator runs slower than real time; jump to the ready-to-paint state
+await page.evaluate(async () => {
+  window.__czx.intro.skip();
+  await window.__xrEmu.waitFrames(8);
+});
+check((await page.evaluate(() => window.__czx.world.uniforms.forceColor.value)) === 0, 'colours drained to the sketch world');
 
 console.log('\n▶ Painting with every brush');
 const brushes = ['glow', 'rainbow', 'sparkle', 'cotton', 'stamp', 'bubble'];
@@ -149,9 +158,9 @@ for (let bi = 0; bi < brushes.length; bi++) {
     const app = window.__czx;
     app.paint.setBrushIndex(bi);
     app.paint.setColorIndex((bi * 2 + 1) % 12);
-    const cx = -0.95 + bi * 0.38;
-    const cy = 1.45;
-    const cz = -0.8;
+    const cx = -0.62 + bi * 0.25;
+    const cy = 1.45 + (bi % 2) * 0.12;
+    const cz = -0.85;
     E.setButton('right', 0, true, 1);
     await E.animate('right', 1300, (t) => {
       const a = t * Math.PI * 2;

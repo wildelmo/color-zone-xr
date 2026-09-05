@@ -23,8 +23,14 @@ The title screen shows a little floating island in full colour. The moment you s
 Everything is procedural: the island, plants, clouds, particles, the music and every sound are generated in code, so the whole experience is ~1 MB and works offline as an installable app.
 
 <p align="center">
-  <img src="docs/screenshots/04-vr-brushes.png" width="49%" alt="Six brushes: glow, rainbow, sparkle, cotton, stickers and bubbles" />
-  <img src="docs/screenshots/10-vr-fireworks.png" width="49%" alt="The smiling sun and a rainbow over the painted island" />
+  <img src="docs/screenshots/03-vr-start.png" width="32%" alt="Dot says hello on the full-colour title island" />
+  <img src="docs/screenshots/04-vr-brushes.png" width="32%" alt="Neon strokes over the pencil-sketch island" />
+  <img src="docs/screenshots/10-vr-fireworks.png" width="32%" alt="The smiling sun and a rainbow over the painted island" />
+</p>
+<p align="center">
+  <img src="docs/screenshots/05-vr-palette.png" width="32%" alt="Picking a colour from the orb crown" />
+  <img src="docs/screenshots/06-vr-teleport.png" width="32%" alt="The glowing teleport arc" />
+  <img src="docs/screenshots/07-vr-menu.png" width="32%" alt="The floating menu with laser pointers" />
 </p>
 
 ## Play it

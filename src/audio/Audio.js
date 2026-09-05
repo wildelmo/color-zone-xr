@@ -211,6 +211,18 @@ export class Audio {
     [7, 3, 0].forEach((st, i) => this._tone(329.63 * Math.pow(2, st / 12), { type: 'triangle', attack: 0.02, decay: 1.2, gain: 0.05, reverb: 0.9, when: 0.2 + i * 0.5 }));
   }
 
+  /** Dot's voice: a burst of cute chirps, one per syllable-ish */
+  chatter(text, pos = null, mood = 'idle') {
+    if (!this.ready || this.muted) return;
+    const n = Math.min(14, Math.max(2, Math.round(String(text).length / 3)));
+    const base = mood === 'surprised' ? 520 : mood === 'happy' ? 760 : 660;
+    for (let i = 0; i < n; i++) {
+      const f = base * Math.pow(2, (Math.floor(Math.random() * 7) - 3) / 12) * (i === n - 1 && /[?!]$/.test(text) ? 1.25 : 1);
+      this._tone(f, { type: 'triangle', attack: 0.008, decay: 0.07, gain: 0.05, sweepTo: f * (Math.random() < 0.5 ? 1.12 : 0.9), sweepTime: 0.06, reverb: 0.25, when: i * 0.085, pos });
+      this._tone(f * 2.01, { type: 'sine', attack: 0.005, decay: 0.05, gain: 0.015, reverb: 0.2, when: i * 0.085, pos });
+    }
+  }
+
   setMuted(m) {
     this.muted = m;
     if (this.master) this.master.gain.setTargetAtTime(m ? 0 : 0.8, this.ctx.currentTime, 0.05);

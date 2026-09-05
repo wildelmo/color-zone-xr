@@ -98,6 +98,8 @@ export class Buddy {
     this.yaw = 0;
     this.lookAtTip = 0;
     this.wave = 0;
+    this.mood = 'idle';
+    this.moodT = 0;
     this.shadow = new BlobShadow(app, 0.16);
     this.group.add(this.shadow.mesh);
 
@@ -105,6 +107,7 @@ export class Buddy {
     ev.on('paintstart', () => this.react(0.5));
     ev.on('bubblepop', (e) => {
       this.react(0.9);
+      this.setMood('happy', 1.2);
       this.spinVel += 14;
       if (e.byHand) this.say(this.app.rng.pick(['Pop!', 'Nice one!', 'Wheee!', 'Got it!']), 1.4);
     });
@@ -115,6 +118,7 @@ export class Buddy {
     });
     ev.on('milestone', (m) => {
       this.react(1);
+      this.setMood('happy', 3);
       this.spinVel += 20;
       this.say(m.buddy || 'Amazing!', 3);
     });
@@ -133,6 +137,12 @@ export class Buddy {
 
   say(text, duration = 2) {
     this.sayQueue.push({ text, duration });
+  }
+
+  /** 'surprised' (wide eyes, round mouth) or 'happy' (squinty smile) for a while */
+  setMood(mood, duration = 1.5) {
+    this.mood = mood;
+    this.moodT = duration;
   }
 
   /** pop into view right in front of the player (intro) with a little wave */
@@ -237,8 +247,32 @@ export class Buddy {
       this.blinkT = 1.8 + rng.float() * 3.5;
     }
     this.blink = Math.max(0, this.blink - dt * 9);
-    const eyeScale = this.blink > 0.5 ? 0.08 : 1;
-    for (const e of this.eyes) e.scale.y = damp(e.scale.y, eyeScale, 40, dt);
+    if (this.moodT > 0) {
+      this.moodT -= dt;
+      if (this.moodT <= 0) this.mood = 'idle';
+    }
+    let eyeY = 1;
+    let eyeXZ = 1;
+    let mouthScale = 1;
+    let mouthRot = Math.PI; // smile
+    if (this.mood === 'surprised') {
+      eyeY = 1.3;
+      eyeXZ = 1.25;
+      mouthScale = 0.7;
+      mouthRot = 0; // little "o"-ish frown flips the arc
+    } else if (this.mood === 'happy') {
+      eyeY = 0.45;
+      mouthScale = 1.35;
+    }
+    const eyeScale = this.blink > 0.5 ? 0.08 : eyeY;
+    for (const e of this.eyes) {
+      e.scale.y = damp(e.scale.y, eyeScale, 40, dt);
+      e.scale.x = damp(e.scale.x, eyeXZ, 12, dt);
+      e.scale.z = damp(e.scale.z, eyeXZ, 12, dt);
+    }
+    this.mouth.scale.x = damp(this.mouth.scale.x, mouthScale, 12, dt);
+    this.mouth.scale.y = damp(this.mouth.scale.y, mouthScale, 12, dt);
+    this.mouth.rotation.z = damp(this.mouth.rotation.z, mouthRot, 10, dt);
 
     // speech
     if (this.bubbleT > 0) {
@@ -249,6 +283,7 @@ export class Buddy {
       if (this.bubbleT <= 0) this.bubble.visible = false;
     } else if (this.sayQueue.length) {
       const s = this.sayQueue.shift();
+      if (app.audio) app.audio.chatter(s.text, this.group.position, this.mood);
       this.bubble.setText(s.text);
       const h = 0.14;
       this.bubble.scale.set(this.bubble.userData.aspect * h, h, 1);

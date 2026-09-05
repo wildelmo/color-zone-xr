@@ -57,7 +57,7 @@ export class Rainbow {
 
   update(dt) {
     const v = this.material.uniforms.opacity.value;
-    const nv = v + (this.target - v) * (1 - Math.exp(-dt * 0.6));
+    const nv = v + (this.target - v) * (1 - Math.exp(-dt * (this.target > v ? 0.6 : 1.8)));
     this.material.uniforms.opacity.value = nv;
     this.mesh.visible = nv > 0.01;
   }

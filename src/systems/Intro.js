@@ -65,24 +65,42 @@ export class Intro {
         { at: 0.5, fn: () => app.buddy.say("Hi! I'm Dot!", 2.0) },
         { at: 2.7, fn: () => app.buddy.say('Oh no! The colours are fading away!', 2.8) },
         { at: 2.9, fn: () => this.beginDrain() },
-        { at: 5.9, fn: () => app.buddy.say('Pull the trigger and paint them back!', 3.4) },
+        { at: 5.9, fn: () => app.buddy.say(this._paintHint(), 3.4) },
         { at: 5.9, fn: () => (app.hintPulse = true) },
-        { at: 12.0, fn: () => !this.sawPaint && app.buddy.say('Wave your wand and squeeze the trigger!', 3.4) },
+        { at: 12.0, fn: () => !this.sawPaint && app.buddy.say(this._paintHint(true), 3.4) },
         { at: 20.0, fn: () => !this.sawPaint && app.buddy.say('You can do it! Paint anywhere!', 3.0) },
       ];
     }
+  }
+
+  _paintHint(again = false) {
+    const h = this.app.hands;
+    const tracked = (h.right.connected && h.right.isTrackedHand) || (h.left.connected && h.left.isTrackedHand);
+    if (tracked) return again ? 'Pinch your finger and thumb, then wave!' : 'Pinch to paint the colours back!';
+    if (this.app.mode === 'desktop') return again ? 'Hold the left mouse button and move!' : 'Click and drag to paint them back!';
+    return again ? 'Wave your wand and squeeze the trigger!' : 'Pull the trigger and paint them back!';
   }
 
   beginDrain() {
     this.drainT = 0;
     this.drainFrom = 1;
     this.app.milestones.rainbow.show(false);
+    this.app.buddy.setMood('surprised', this.drainDur + 0.8);
     if (this.app.audio) this.app.audio.drain(this.drainDur);
     if (this.app.fx && this.phase === 'story') {
       const p = this.app.headPosition();
       p.y -= 0.2;
       this.app.fx.burst(p, this.app.paint.color, 30, 1.6, 0.05);
     }
+  }
+
+  /** jump straight to the drained, ready-to-paint state (tests, returning players) */
+  skip() {
+    if (this.done) return;
+    this.steps = [];
+    this.drainT = -1;
+    this.app.milestones.rainbow.show(false);
+    this.finish();
   }
 
   finish() {
