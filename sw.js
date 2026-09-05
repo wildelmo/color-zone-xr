@@ -33,6 +33,7 @@ const ASSETS = [
   './src/world/ShadowMap.js',
   './src/world/Props.js',
   './src/util/BlobShadow.js',
+  './src/util/Warmup.js',
   './src/systems/Intro.js',
   './src/paint/Stroke.js',
   './src/paint/StrokeMaterial.js',

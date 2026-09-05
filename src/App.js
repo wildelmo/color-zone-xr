@@ -24,6 +24,7 @@ import { HelpSign } from './ui/HelpSign.js';
 import { Locomotion } from './input/Locomotion.js';
 import { HandVisual } from './input/HandVisual.js';
 import { Intro } from './systems/Intro.js';
+import { warmMaterials } from './util/Warmup.js';
 import { SaveGame } from './systems/SaveGame.js';
 
 /**
@@ -113,6 +114,13 @@ export class App {
     this.scene.add(this.handVisual.group);
     this.hintPulse = false;
     this.intro = this.addSystem(new Intro(this));
+    // compile every on-demand shader during the loading frames (no first-use hitches)
+    warmMaterials(this.scene, [
+      ...Object.values(this.paint.materials),
+      this.milestones.rainbow.material,
+      this.menu.panel.material,
+      this.locomotion.fade.material,
+    ]);
     this._v = new THREE.Vector3();
     this._c = new THREE.Color();
     this._fwd = new THREE.Vector3();
