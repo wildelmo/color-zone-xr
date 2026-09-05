@@ -57,6 +57,8 @@ const ASSETS = [
   './src/creatures/Butterflies.js',
   './src/systems/Milestones.js',
   './src/systems/SaveGame.js',
+  './src/systems/Guide.js',
+  './src/audio/GuideSounds.js',
   './src/ui/Text.js',
   './src/ui/Toast.js',
   './src/ui/Menu.js',
