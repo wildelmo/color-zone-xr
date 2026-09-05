@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#3a8dff"/>
+      <stop offset="1" stop-color="#a05cff"/>
+    </linearGradient>
+    <linearGradient id="rb" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#ff3b5c"/><stop offset="0.2" stop-color="#ff8c2a"/><stop offset="0.4" stop-color="#ffd93d"/>
+      <stop offset="0.6" stop-color="#33d872"/><stop offset="0.8" stop-color="#3ec9ff"/><stop offset="1" stop-color="#ff6ad5"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#fff" stop-opacity="0.95"/><stop offset="0.5" stop-color="#ffd93d" stop-opacity="0.5"/><stop offset="1" stop-color="#ffd93d" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#bg)"/>
+  <ellipse cx="256" cy="390" rx="200" ry="70" fill="#33d872" opacity="0.9"/>
+  <ellipse cx="256" cy="380" rx="150" ry="46" fill="#7ee081" opacity="0.9"/>
+  <path d="M96 300 C 150 120, 300 120, 330 240 S 420 330, 430 200" fill="none" stroke="url(#rb)" stroke-width="46" stroke-linecap="round"/>
+  <path d="M96 300 C 150 120, 300 120, 330 240 S 420 330, 430 200" fill="none" stroke="#fff" stroke-width="12" stroke-linecap="round" opacity="0.55"/>
+  <circle cx="430" cy="200" r="70" fill="url(#glow)"/>
+  <g transform="translate(150 300) rotate(-35)">
+    <rect x="-14" y="0" width="28" height="150" rx="14" fill="#f4f0ff"/>
+    <rect x="-16" y="118" width="32" height="18" rx="6" fill="#ffd93d"/>
+    <circle cx="0" cy="-8" r="22" fill="#ff6ad5"/>
+    <circle cx="-6" cy="-14" r="7" fill="#fff" opacity="0.8"/>
+  </g>
+  <g transform="translate(360 330)">
+    <path d="M0 -40 C 0 -40, -34 -10, -34 12 A 34 34 0 0 0 34 12 C 34 -10, 0 -40, 0 -40 Z" fill="#7cc7ff"/>
+    <circle cx="-11" cy="10" r="7" fill="#fff"/><circle cx="11" cy="10" r="7" fill="#fff"/>
+    <circle cx="-10" cy="11" r="3.5" fill="#241b33"/><circle cx="12" cy="11" r="3.5" fill="#241b33"/>
+    <path d="M-8 24 Q 0 31 8 24" stroke="#241b33" stroke-width="3" fill="none" stroke-linecap="round"/>
+  </g>
+</svg>
