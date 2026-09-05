@@ -48,7 +48,7 @@ export class Milestones {
       app.fx.confetti(p, 60 + level * 30, null, 2.2);
       app.fx.burst(p, new THREE.Color('#ffffff'), 30, 1.5, 0.05);
     }
-    if (m.id === 'butterflies') app.butterflies.enable();
+    if (m.id === 'butterflies') app.butterflies.enable(true);
     if (m.id === 'rainbow') this.rainbow.show(true);
     if (m.id === 'sunshine') this.smileTarget = 1;
     if (m.id === 'finale') {
@@ -62,7 +62,7 @@ export class Milestones {
   restore(ids) {
     for (const id of ids) {
       this.reached.add(id);
-      if (id === 'butterflies') this.app.butterflies.enable();
+      if (id === 'butterflies') this.app.butterflies.enable(true);
       if (id === 'rainbow') this.rainbow.show(true);
       if (id === 'sunshine') this.smileTarget = 1;
     }
@@ -82,6 +82,10 @@ export class Milestones {
         this.trigger(m);
         break; // one per frame so celebrations don't pile up
       }
+    }
+    // the rainbow grows in slowly from about a third painted (felt progress), full at the milestone
+    if (!app.intro || app.intro.done) {
+      this.rainbow.target = this.reached.has('rainbow') ? 1 : Math.max(0, Math.min(1, (p - 0.3) / 0.25)) * 0.85;
     }
     this.rainbow.update(dt);
     this.smile += (this.smileTarget - this.smile) * (1 - Math.exp(-dt * 0.8));

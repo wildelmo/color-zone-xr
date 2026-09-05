@@ -86,6 +86,7 @@ const _up = new THREE.Vector3(0, 1, 0);
 const _dir = new THREE.Vector3();
 const _head = new THREE.Vector3();
 const _c = new THREE.Color();
+const _v = new THREE.Vector3();
 
 export class Butterflies {
   constructor(app, capacity = 40) {
@@ -104,24 +105,70 @@ export class Butterflies {
     this.mesh.name = 'butterflies';
     this.items = [];
     this.enabled = false;
+    this.full = false; // the big swarm (25% milestone); before that just a few early visitors
     this.spawnT = 0;
     this.targetCount = 0;
+    this.still = { left: 0, right: 0 }; // how long each wand has been held still
+    this.catches = 0;
+    // a few butterflies come early: the first creature you wake brings them
+    app.events.on('critterwake', () => this.enable(false));
   }
 
-  enable() {
+  enable(full = true) {
     this.enabled = true;
+    if (full) this.full = true;
   }
 
   reset() {
     this.enabled = false;
+    this.full = false;
     this.items.length = 0;
     this.mesh.count = 0;
+  }
+
+  /** a butterfly is touched by a wand: a puff of its colour, colour on the ground, and it flutters off elsewhere */
+  _catch(it, hand) {
+    const app = this.app;
+    if (app.fx) app.fx.burst(it.pos, it.color, 14, 0.8, 0.03);
+    app.world.paintMap.stamp(it.pos.x, it.pos.z, 1.0, it.color, 0.7, 0.8);
+    if (app.audio) app.audio.pop(0.05, it.pos);
+    if (hand) hand.pulse(0.4, 30);
+    this.catches++;
+    app.events.emit('butterflycatch', { position: it.pos.clone(), color: it.color.clone() });
+    // reappear somewhere on a flower
+    const flowers = Array.from(app.world.flora.bloomedFlowers(40));
+    const f = flowers.length ? flowers[app.rng.int(0, flowers.length - 1)] : [it.pos.x + app.rng.gauss() * 3, it.pos.z + app.rng.gauss() * 3];
+    it.pos.set(f[0], app.world.heightAt(f[0], f[1]) + 0.3, f[1]);
+    it.vel.set(0, 0, 0);
+    it.perch = null;
+    this._pickTarget(it);
+  }
+
+  _stillHand() {
+    const h = this.app.hands;
+    for (const key of ['right', 'left']) {
+      const hand = h[key];
+      if (!hand.connected || !hand.hasTip || hand.triggerDown || this.still[key] < 1.0) continue;
+      if (this.items.some((it) => it.perch === hand)) continue;
+      return hand;
+    }
+    return null;
   }
 
   _pickTarget(item) {
     const app = this.app;
     const rng = app.rng;
     const flowers = Array.from(app.world.flora.bloomedFlowers(80));
+    // hold your wand still and one may come and land on it
+    const still = rng.chance(0.3) ? this._stillHand() : null;
+    if (still) {
+      item.target.copy(still.tip);
+      item.perchWanted = still;
+      item.rest = 0;
+      item.color.lerp(app.paint.color, 0.3);
+      return;
+    }
+    item.perchWanted = null;
     if (rng.chance(0.18) || flowers.length === 0) {
       app.headPosition(_head);
       const a = rng.float() * Math.PI * 2;
@@ -138,10 +185,17 @@ export class Butterflies {
   }
 
   update(dt, time) {
-    if (!this.enabled) return;
     const app = this.app;
+    // a few come on their own once some colour is out there (in case no creature was woken)
+    if (!this.enabled && app.world.progress > 0.08 && (!app.intro || app.intro.done)) this.enable(false);
+    if (!this.enabled) return;
     const rng = app.rng;
-    this.targetCount = Math.min(this.capacity, Math.floor(8 + app.world.progress * 34));
+    for (const key of ['left', 'right']) {
+      const hand = app.hands[key];
+      const stillNow = hand.connected && hand.hasTip && hand.tipVel.length() < 0.15 && !hand.triggerDown;
+      this.still[key] = stillNow ? this.still[key] + dt : 0;
+    }
+    this.targetCount = Math.min(this.capacity, Math.floor(this.full ? 8 + app.world.progress * 34 : 3 + app.world.progress * 12));
     this.spawnT -= dt;
     if (this.items.length < this.targetCount && this.spawnT <= 0) {
       this.spawnT = 0.6;
@@ -155,15 +209,69 @@ export class Butterflies {
         rest: 0,
         phase: rng.float() * 6.28,
         yaw: 0,
+        perch: null,
+        perchWanted: null,
       };
       this._pickTarget(item);
       this.items.push(item);
     }
     let n = 0;
+    const L = app.hands.left;
+    const R = app.hands.right;
     for (const it of this.items) {
+      // perched on a wand: ride the tip, drink its colour, leave when the hand moves
+      if (it.perch) {
+        const h = it.perch;
+        if (!h.connected || !h.hasTip || h.triggerDown || h.tipVel.length() > 0.6) {
+          it.perch = null;
+          it.vel.set(rng.gauss() * 0.3, 0.6, rng.gauss() * 0.3);
+          if (app.fx) app.fx.burst(it.pos, it.color, 5, 0.3, 0.02);
+          this._pickTarget(it);
+        } else {
+          it.pos.copy(h.tip);
+          it.pos.y += 0.012;
+          it.color.lerp(app.paint.color, 1 - Math.exp(-dt * 0.4));
+          it.yaw += (Math.sin(time * 0.7 + it.phase) * 0.4 - it.yaw) * 0.02;
+          _q.setFromAxisAngle(_up, it.yaw);
+          _m.compose(it.pos, _q, _s);
+          this.mesh.setMatrixAt(n, _m);
+          this.mesh.setColorAt(n, it.color);
+          n++;
+          continue;
+        }
+      }
+      // touched by a wand? poof!
+      let caught = false;
+      for (const hand of [L, R]) {
+        if (!hand.connected || !hand.hasTip) continue;
+        if (it.perchWanted === hand) continue;
+        if (hand.tip.distanceTo(it.pos) < 0.09 && hand.tipVel.length() > 0.25) {
+          this._catch(it, hand);
+          caught = true;
+          break;
+        }
+      }
+      if (caught) continue;
+      if (it.perchWanted) {
+        const h = it.perchWanted;
+        if (!h.connected || !h.hasTip || h.triggerDown || h.tipVel.length() > 0.5) {
+          it.perchWanted = null;
+          this._pickTarget(it);
+        } else {
+          it.target.copy(h.tip);
+          it.target.y += 0.02;
+        }
+      }
       _dir.subVectors(it.target, it.pos);
       const d = _dir.length();
-      if (d < 0.25) {
+      if (it.perchWanted && d < 0.05) {
+        it.perch = it.perchWanted;
+        it.perchWanted = null;
+        it.vel.set(0, 0, 0);
+        it.perch.tick(0.12, 60);
+        if (app.fx) app.fx.burst(it.pos, it.color, 6, 0.25, 0.018);
+        app.events.emit('butterflyperch', { hand: it.perch });
+      } else if (d < (it.perchWanted ? 0.05 : 0.25)) {
         it.rest -= dt;
         if (it.rest <= 0) this._pickTarget(it);
         it.vel.multiplyScalar(1 - 2 * dt);
@@ -174,7 +282,8 @@ export class Butterflies {
         it.vel.z += Math.cos(time * 2.6 + it.phase) * 0.6 * dt;
         it.vel.y += Math.sin(time * 7 + it.phase) * 0.9 * dt;
         const sp = it.vel.length();
-        if (sp > 1.1) it.vel.multiplyScalar(1.1 / sp);
+        const max = it.perchWanted && d < 0.5 ? 0.35 : 1.1;
+        if (sp > max) it.vel.multiplyScalar(max / sp);
       }
       it.pos.addScaledVector(it.vel, dt);
       const gy = app.world.heightAt(it.pos.x, it.pos.z) + 0.15;
