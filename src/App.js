@@ -17,6 +17,7 @@ import { Splats } from './fx/Splats.js';
 import { Audio } from './audio/Audio.js';
 import { Buddy } from './creatures/Buddy.js';
 import { Butterflies } from './creatures/Butterflies.js';
+import { Critters } from './creatures/Critters.js';
 import { Milestones } from './systems/Milestones.js';
 import { Toast } from './ui/Toast.js';
 import { Menu } from './ui/Menu.js';
@@ -120,9 +121,12 @@ export class App {
     this.handVisual = this.addSystem(new HandVisual(this));
     this.scene.add(this.handVisual.group);
     this.hintPulse = false;
+    this.saveGame = this.addSystem(new SaveGame(this)); // constructed before the play layer so systems can register save plugins; load() runs last
     // ---- play layer: the things to do (each is a self-contained system) ----
     // (systems register themselves here; order = update order)
     this.catch = this.addSystemBefore(new Catch(this), this.splats); // before Splats: a catch consumes the squeeze before it would conjure
+    this.critters = this.addSystem(new Critters(this)); // the sleepyheads: sketch animals you wake with colour
+    this.scene.add(this.critters.group);
     this.boops = this.addSystem(new Boops(this)); // poke anything with the wand; paint balls hit things
     this.pond = this.addSystem(new Pond(this)); // the living pond: feed the fountain, koi, bubbles near you
     this.scene.add(this.pond.group);
@@ -147,7 +151,6 @@ export class App {
     this.events.on('modechange', (mode) => {
       if (mode === 'xr' || mode === 'desktop') this.audio.startFountain(this.world.fountain.top);
     });
-    this.saveGame = this.addSystem(new SaveGame(this));
     if (!params.has('fresh')) {
       try {
         this.restored = this.saveGame.load();
