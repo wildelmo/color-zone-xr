@@ -62,7 +62,10 @@ export class Controls {
   undo(hand) {
     const app = this.app;
     for (const b of app.brushes) if (b.painting) b.cancel();
+    const pts = app.fx ? app.paint.lastStrokePoints(18) : [];
     if (app.paint.undo()) {
+      // the stroke poofs into sparkles
+      for (const p of pts) app.fx.burst(p, app.paint.color, 3, 0.5, 0.03);
       hand.pulse(0.5, 60);
       if (app.audio) app.audio.undo();
     }

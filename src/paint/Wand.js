@@ -81,9 +81,10 @@ export class Wand {
     this.glow.material.color.copy(c);
     const painting = app.brushes && app.brushes.some((b) => b.hand === h && b.painting);
     this.pulse += ((painting ? 1 : 0) - this.pulse) * (1 - Math.exp(-dt * 12));
+    const hint = app.hintPulse ? 0.5 + 0.5 * Math.sin(time * 7) : 0;
     const breathe = 1 + Math.sin(time * 6) * 0.06 * this.pulse + Math.sin(time * 2.1) * 0.03;
-    this.glow.scale.setScalar((0.07 + this.pulse * 0.05 + app.paint.size * 1.2) * breathe);
-    this.glow.material.opacity = 0.6 + 0.35 * this.pulse;
+    this.glow.scale.setScalar((0.07 + this.pulse * 0.05 + app.paint.size * 1.2 + hint * 0.09) * breathe);
+    this.glow.material.opacity = 0.6 + 0.35 * this.pulse + hint * 0.3;
     const r = app.paint.size + 0.004;
     this.sizeRing.scale.setScalar(r);
     this.sizeRing.visible = h.handedness === 'right' || !app.hands.right.connected;

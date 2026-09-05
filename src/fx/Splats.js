@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { PropMaterial, glowTexture } from '../util/PropMaterial.js';
+import { BlobShadow } from '../util/BlobShadow.js';
 
 /**
  * Paint balls: squeeze the grip to conjure one, let go to throw it. Where it
@@ -109,11 +110,15 @@ export class Splats {
     glow.scale.setScalar(0.22);
     mesh.add(glow);
     this.group.add(mesh);
-    return { mesh, glow, vel: new THREE.Vector3(), color: color.clone(), flying: false, age: 0, spin: new THREE.Vector3(this.app.rng.gauss(), this.app.rng.gauss(), this.app.rng.gauss()).multiplyScalar(6) };
+    const shadow = new BlobShadow(this.app, 0.07);
+    this.group.add(shadow.mesh);
+    return { mesh, glow, shadow, vel: new THREE.Vector3(), color: color.clone(), flying: false, age: 0, spin: new THREE.Vector3(this.app.rng.gauss(), this.app.rng.gauss(), this.app.rng.gauss()).multiplyScalar(6) };
   }
 
   _removeBall(b) {
     this.group.remove(b.mesh);
+    this.group.remove(b.shadow.mesh);
+    b.shadow.material.dispose();
     b.mesh.material.dispose();
     b.glow.material.dispose();
     const i = this.balls.indexOf(b);
@@ -134,7 +139,7 @@ export class Splats {
     }
     // decal on the terrain
     this._placeDecal(p.x, p.z, r, b.color, app.rng.float(), app.time);
-    if (app.audio) app.audio.splat(speed);
+    if (app.audio) app.audio.splat(speed, p);
     this.splatCount++;
     app.events.emit('splat', { position: p.clone(), color: b.color.clone(), radius: r });
     // pop bubbles nearby
@@ -215,6 +220,7 @@ export class Splats {
       }
       if (held) {
         held.mesh.position.copy(hand.tip);
+        held.shadow.update(held.mesh.position, 0.07, 2.5);
         held.mesh.scale.setScalar(Math.min(1, held.mesh.scale.x + dt * 6));
         held.mesh.quaternion.copy(hand.tipQuat);
         if (hand.squeezeReleased) {
@@ -241,6 +247,7 @@ export class Splats {
       p.addScaledVector(b.vel, dt);
       b.mesh.rotation.x += b.spin.x * dt;
       b.mesh.rotation.y += b.spin.y * dt;
+      b.shadow.update(p, 0.07, 6);
       if (app.fx && app.rng.chance(0.6)) app.fx.sparkle(p, _v.set(0, 0.2, 0), b.color, 0.4, 0.03);
       const gy = world.heightAt(p.x, p.z);
       const onIsland = world.terrain.isOnIsland(p.x, p.z, 0.5);

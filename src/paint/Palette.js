@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { PALETTE } from '../config.js';
 import { PropMaterial } from '../util/PropMaterial.js';
+import { makeLabel } from '../ui/Text.js';
 
 /**
  * A crown of glossy colour orbs around the left controller. Dip the other
@@ -46,6 +47,11 @@ export class Palette {
     this.hub.position.set(0, 0.028, 0.02);
     this.group.add(this.hub);
 
+    this.label = makeLabel({ text: '', size: 52, padding: 22, width: 640 });
+    this.label.visible = false;
+    this.label.renderOrder = 28;
+    this.group.add(this.label);
+    this.labelT = 0;
     this.scales = new Float32Array(n).fill(1);
     this.hover = -1;
     this._m = new THREE.Matrix4();
@@ -104,6 +110,12 @@ export class Palette {
       R.uiBlocked = true;
       if (hover !== this.hover) {
         app.paint.setColorIndex(hover);
+        this.label.setText(PALETTE[hover].name);
+        this.label.scale.set(this.label.userData.aspect * 0.045, 0.045, 1);
+        const lp = this.positions[hover];
+        this.label.position.set(lp.x, lp.y + 0.045, lp.z);
+        this.label.visible = true;
+        this.labelT = 1.4;
         R.pulse(0.6, 40);
         L.pulse(0.3, 30);
         if (app.audio) app.audio.select(hover / this.n);
@@ -114,6 +126,11 @@ export class Palette {
       }
     }
     this.hover = hover;
+    if (this.labelT > 0) {
+      this.labelT -= dt;
+      this.label.material.opacity = Math.min(1, this.labelT / 0.3);
+      if (this.labelT <= 0) this.label.visible = false;
+    }
     // animate orb scales
     for (let i = 0; i < this.n; i++) {
       const target = i === hover ? 1.55 : i === sel ? 1.25 : 1;

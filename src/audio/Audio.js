@@ -136,13 +136,88 @@ export class Audio {
     this.whoosh.start();
   }
 
+  /** keep the 3D listener on the player's head */
+  setListener(pos, quat, fwd, up) {
+    if (!this.ready) return;
+    const L = this.ctx.listener;
+    const t = this.ctx.currentTime;
+    if (L.positionX) {
+      L.positionX.setTargetAtTime(pos.x, t, 0.05);
+      L.positionY.setTargetAtTime(pos.y, t, 0.05);
+      L.positionZ.setTargetAtTime(pos.z, t, 0.05);
+      L.forwardX.setTargetAtTime(fwd.x, t, 0.05);
+      L.forwardY.setTargetAtTime(fwd.y, t, 0.05);
+      L.forwardZ.setTargetAtTime(fwd.z, t, 0.05);
+      L.upX.setTargetAtTime(up.x, t, 0.05);
+      L.upY.setTargetAtTime(up.y, t, 0.05);
+      L.upZ.setTargetAtTime(up.z, t, 0.05);
+    } else if (L.setPosition) {
+      L.setPosition(pos.x, pos.y, pos.z);
+      L.setOrientation(fwd.x, fwd.y, fwd.z, up.x, up.y, up.z);
+    }
+  }
+
+  /** destination for a sound: the master bus, or a panner placed in the world */
+  _out(pos) {
+    if (!pos) return this.master;
+    const ctx = this.ctx;
+    const p = ctx.createPanner();
+    p.panningModel = 'equalpower';
+    p.distanceModel = 'inverse';
+    p.refDistance = 1.2;
+    p.maxDistance = 80;
+    p.rolloffFactor = 1.1;
+    if (p.positionX) {
+      p.positionX.value = pos.x;
+      p.positionY.value = pos.y;
+      p.positionZ.value = pos.z;
+    } else p.setPosition(pos.x, pos.y, pos.z);
+    p.connect(this.master);
+    return p;
+  }
+
+  /** a gentle burbling fountain, positioned in the world */
+  startFountain(pos) {
+    if (!this.ready || this.fountainGain) return;
+    const ctx = this.ctx;
+    const src = ctx.createBufferSource();
+    src.buffer = this.noiseBuffer;
+    src.loop = true;
+    const f = ctx.createBiquadFilter();
+    f.type = 'bandpass';
+    f.frequency.value = 2400;
+    f.Q.value = 0.7;
+    const g = ctx.createGain();
+    g.gain.value = 0.0;
+    const lfo = ctx.createOscillator();
+    lfo.frequency.value = 2.3;
+    const lg = ctx.createGain();
+    lg.gain.value = 0.02;
+    lfo.connect(lg);
+    lg.connect(g.gain);
+    src.connect(f);
+    f.connect(g);
+    g.connect(this._out(pos));
+    src.start();
+    lfo.start();
+    g.gain.setTargetAtTime(0.055, ctx.currentTime, 1.5);
+    this.fountainGain = g;
+  }
+
+  /** the colours draining away: a long falling whoosh with a wistful chord */
+  drain(duration = 2.6) {
+    this._noise({ duration, freq: 3200, sweepTo: 180, q: 0.9, gain: 0.16, reverb: 0.7 });
+    this._tone(220, { type: 'sine', attack: 0.05, decay: duration, gain: 0.08, sweepTo: 55, sweepTime: duration * 0.9, reverb: 0.6 });
+    [7, 3, 0].forEach((st, i) => this._tone(329.63 * Math.pow(2, st / 12), { type: 'triangle', attack: 0.02, decay: 1.2, gain: 0.05, reverb: 0.9, when: 0.2 + i * 0.5 }));
+  }
+
   setMuted(m) {
     this.muted = m;
     if (this.master) this.master.gain.setTargetAtTime(m ? 0 : 0.8, this.ctx.currentTime, 0.05);
   }
 
   /** simple enveloped oscillator voice */
-  _tone(freq, { type = 'sine', attack = 0.005, decay = 0.4, gain = 0.2, reverb = 0.5, detune = 0, sweepTo = null, sweepTime = 0.1, when = 0 } = {}) {
+  _tone(freq, { type = 'sine', attack = 0.005, decay = 0.4, gain = 0.2, reverb = 0.5, detune = 0, sweepTo = null, sweepTime = 0.1, when = 0, pos = null } = {}) {
     if (!this.ready || this.muted) return;
     const ctx = this.ctx;
     const t0 = ctx.currentTime + when;
@@ -156,7 +231,7 @@ export class Audio {
     g.gain.exponentialRampToValueAtTime(gain, t0 + attack);
     g.gain.exponentialRampToValueAtTime(0.0001, t0 + attack + decay);
     o.connect(g);
-    g.connect(this.master);
+    g.connect(this._out(pos));
     if (reverb > 0) {
       const rg = ctx.createGain();
       rg.gain.value = reverb;
@@ -167,7 +242,7 @@ export class Audio {
     o.stop(t0 + attack + decay + 0.05);
   }
 
-  _noise({ duration = 0.08, freq = 1200, q = 1, gain = 0.2, sweepTo = null, reverb = 0.2, when = 0, type = 'bandpass' } = {}) {
+  _noise({ duration = 0.08, freq = 1200, q = 1, gain = 0.2, sweepTo = null, reverb = 0.2, when = 0, type = 'bandpass', pos = null } = {}) {
     if (!this.ready || this.muted) return;
     const ctx = this.ctx;
     const t0 = ctx.currentTime + when;
@@ -183,7 +258,7 @@ export class Audio {
     g.gain.exponentialRampToValueAtTime(0.0001, t0 + duration);
     src.connect(f);
     f.connect(g);
-    g.connect(this.master);
+    g.connect(this._out(pos));
     if (reverb > 0) {
       const rg = ctx.createGain();
       rg.gain.value = reverb;
@@ -240,19 +315,19 @@ export class Audio {
     this._tone(523.25, { type: 'triangle', attack: 0.004, decay: 0.25, gain: 0.07, reverb: 0.3, when: 0.09 });
   }
 
-  pop(r = 0.1) {
+  pop(r = 0.1, pos = null) {
     const f = 1500 - Math.min(1, r / 0.25) * 900;
-    this._noise({ duration: 0.06, freq: f * 1.5, sweepTo: f * 0.5, q: 1.5, gain: 0.25, reverb: 0.3 });
-    this._tone(f, { type: 'sine', attack: 0.002, decay: 0.12, gain: 0.12, sweepTo: f * 0.45, sweepTime: 0.1, reverb: 0.5 });
-    this._tone(this._noteForHeight(1.4, Math.floor(Math.random() * 5)), { type: 'sine', attack: 0.004, decay: 0.5, gain: 0.05, reverb: 0.8, when: 0.03 });
+    this._noise({ duration: 0.06, freq: f * 1.5, sweepTo: f * 0.5, q: 1.5, gain: 0.25, reverb: 0.3, pos });
+    this._tone(f, { type: 'sine', attack: 0.002, decay: 0.12, gain: 0.12, sweepTo: f * 0.45, sweepTime: 0.1, reverb: 0.5, pos });
+    this._tone(this._noteForHeight(1.4, Math.floor(Math.random() * 5)), { type: 'sine', attack: 0.004, decay: 0.5, gain: 0.05, reverb: 0.8, when: 0.03, pos });
   }
 
   bubbleBlow(v = 1) {
     this._noise({ duration: 0.12, freq: 900, sweepTo: 1600, q: 2, gain: 0.05 * v, reverb: 0.2 });
   }
 
-  dripLand() {
-    this._tone(900 + Math.random() * 400, { type: 'sine', attack: 0.002, decay: 0.08, gain: 0.025, sweepTo: 400, sweepTime: 0.06, reverb: 0.5 });
+  dripLand(pos = null) {
+    this._tone(900 + Math.random() * 400, { type: 'sine', attack: 0.002, decay: 0.08, gain: 0.03, sweepTo: 400, sweepTime: 0.06, reverb: 0.5, pos });
   }
 
   conjure() {
@@ -264,12 +339,12 @@ export class Audio {
     this._noise({ duration: 0.25, freq: 600, sweepTo: 2000, q: 0.9, gain: 0.08 + v * 0.1, reverb: 0.2 });
   }
 
-  splat(speed = 3) {
+  splat(speed = 3, pos = null) {
     const v = Math.min(1, speed / 8);
-    this._tone(140, { type: 'sine', attack: 0.004, decay: 0.22, gain: 0.25, sweepTo: 45, sweepTime: 0.2, reverb: 0.3 });
-    this._noise({ duration: 0.28, freq: 900, sweepTo: 250, q: 0.7, gain: 0.22 + v * 0.1, reverb: 0.5 });
+    this._tone(140, { type: 'sine', attack: 0.004, decay: 0.22, gain: 0.25, sweepTo: 45, sweepTime: 0.2, reverb: 0.3, pos });
+    this._noise({ duration: 0.28, freq: 900, sweepTo: 250, q: 0.7, gain: 0.22 + v * 0.1, reverb: 0.5, pos });
     for (let i = 0; i < 4; i++) {
-      this._tone(this._noteForHeight(0.5 + i * 0.4), { type: 'sine', attack: 0.003, decay: 0.35, gain: 0.05, reverb: 0.8, when: 0.05 + i * 0.05 });
+      this._tone(this._noteForHeight(0.5 + i * 0.4), { type: 'sine', attack: 0.003, decay: 0.35, gain: 0.05, reverb: 0.8, when: 0.05 + i * 0.05, pos });
     }
   }
 
@@ -282,13 +357,13 @@ export class Audio {
     this._noise({ duration: 0.06, freq: 2000, q: 1, gain: 0.04 });
   }
 
-  bloom() {
+  bloom(pos = null) {
     if (!this.ready) return;
     const now = this.ctx.currentTime;
     if (now - this.lastBloom < 0.09) return;
     this.lastBloom = now;
     const f = PENTA[8 + Math.floor(Math.random() * 6)];
-    this._tone(f, { type: 'sine', attack: 0.003, decay: 0.3, gain: 0.035, reverb: 0.8 });
+    this._tone(f, { type: 'sine', attack: 0.003, decay: 0.3, gain: 0.04, reverb: 0.8, pos });
   }
 
   milestone(level = 0) {

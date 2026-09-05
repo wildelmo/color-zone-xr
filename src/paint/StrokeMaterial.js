@@ -15,6 +15,9 @@ varying vec2 vUv;
 varying float vDist;
 void main() {
   vec3 pos = position;
+  #ifdef HALO
+    pos += normal * (aux * 2.4 + 0.004);
+  #endif
   #ifdef COTTON
     float wob = sin(uv.x * 9.0 + time * 2.0 + uv.y * 6.2831) * 0.16 + sin(uv.x * 23.0 - time * 1.3 + uv.y * 12.566) * 0.12;
     pos += normal * aux * wob;
@@ -44,6 +47,14 @@ void main() {
   vec3 V = normalize(vV);
   float ndv = max(dot(N, V), 0.0);
   float fres = pow(1.0 - ndv, 2.2);
+  #ifdef HALO
+    // soft additive aura around the neon core: strongest looking straight through the tube
+    float fogA = 1.0 - smoothstep(fogRange.x * 0.6, fogRange.y * 0.6, vDist);
+    float a = (pow(ndv, 1.6) * 0.34 + pow(ndv, 10.0) * 0.25) * fogA;
+    gl_FragColor = vec4(vColor * 1.1 + vec3(0.08), a);
+    #include <colorspace_fragment>
+    return;
+  #endif
   #ifdef COTTON
     float lit = 0.55 + 0.45 * max(dot(N, sunDir), 0.0);
     vec3 col = vColor * (0.55 + 0.6 * lit) + vec3(1.0) * fres * 0.3 + vec3(0.12);
@@ -66,18 +77,22 @@ void main() {
 `;
 
 export class StrokeMaterial extends THREE.ShaderMaterial {
-  constructor(shared, { cotton = false, sparkle = false } = {}) {
+  constructor(shared, { cotton = false, sparkle = false, halo = false } = {}) {
     const defines = {};
     if (cotton) defines.COTTON = 1;
     if (sparkle) defines.SPARKLE = 1;
+    if (halo) defines.HALO = 1;
     super({
       uniforms: { time: shared.time, fogColor: shared.fogColor, fogRange: shared.fogRange, sunDir: shared.sunDir },
       vertexShader: vert,
       fragmentShader: frag,
       defines,
       vertexColors: true,
-      side: THREE.DoubleSide,
+      side: halo ? THREE.FrontSide : THREE.DoubleSide,
+      transparent: halo,
+      depthWrite: !halo,
+      blending: halo ? THREE.AdditiveBlending : THREE.NormalBlending,
     });
-    this.name = cotton ? 'stroke-cotton' : sparkle ? 'stroke-sparkle' : 'stroke-glow';
+    this.name = halo ? 'stroke-halo' : cotton ? 'stroke-cotton' : sparkle ? 'stroke-sparkle' : 'stroke-glow';
   }
 }

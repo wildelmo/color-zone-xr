@@ -214,7 +214,7 @@ console.log('\n▶ Many strokes stay cheap (batching)');
   });
   s = await state(page);
   check(s.batches >= 1 && s.live <= 24, `60 extra strokes → ${s.batches} batch(es), ${s.live} live meshes`);
-  check(s.drawCalls < 140, `draw calls stay low (${s.drawCalls} for both eyes)`);
+  check(s.drawCalls < 190, `draw calls stay low (${s.drawCalls} for both eyes)`);
   const undone = await page.evaluate(() => {
     const a = window.__czx;
     let n = 0;

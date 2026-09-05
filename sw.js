@@ -1,7 +1,7 @@
 /* Color Zone XR service worker: cache the whole app so it launches offline
    (the Quest browser lets you install it like an app). Bump VERSION when
    shipping changes so old caches are dropped. */
-const VERSION = 'czx-v1';
+const VERSION = 'czx-v2';
 const ASSETS = [
   './',
   './index.html',
@@ -29,6 +29,11 @@ const ASSETS = [
   './src/world/Pond.js',
   './src/world/Rainbow.js',
   './src/paint/PaintMap.js',
+  './src/paint/StampRenderer.js',
+  './src/world/ShadowMap.js',
+  './src/world/Props.js',
+  './src/util/BlobShadow.js',
+  './src/systems/Intro.js',
   './src/paint/Stroke.js',
   './src/paint/StrokeMaterial.js',
   './src/paint/StampLayer.js',

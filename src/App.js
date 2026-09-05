@@ -23,6 +23,7 @@ import { Menu } from './ui/Menu.js';
 import { HelpSign } from './ui/HelpSign.js';
 import { Locomotion } from './input/Locomotion.js';
 import { HandVisual } from './input/HandVisual.js';
+import { Intro } from './systems/Intro.js';
 import { SaveGame } from './systems/SaveGame.js';
 
 /**
@@ -52,7 +53,7 @@ export class App {
     renderer.xr.enabled = true;
     renderer.xr.setReferenceSpaceType('local-floor');
     renderer.xr.setFoveation(1);
-    renderer.setClearColor(0xd3d7df, 1);
+    renderer.setClearColor(0xe6e1d6, 1);
     this.renderer = renderer;
     this.canvas = renderer.domElement;
 
@@ -110,6 +111,16 @@ export class App {
     this.scene.add(this.locomotion.group);
     this.handVisual = this.addSystem(new HandVisual(this));
     this.scene.add(this.handVisual.group);
+    this.hintPulse = false;
+    this.intro = this.addSystem(new Intro(this));
+    this._v = new THREE.Vector3();
+    this._c = new THREE.Color();
+    this._fwd = new THREE.Vector3();
+    this._up = new THREE.Vector3();
+    this._q = new THREE.Quaternion();
+    this.events.on('modechange', (mode) => {
+      if (mode === 'xr' || mode === 'desktop') this.audio.startFountain(this.world.fountain.top);
+    });
     this.saveGame = this.addSystem(new SaveGame(this));
     if (!params.has('fresh')) {
       try {
@@ -325,8 +336,30 @@ export class App {
     const bloomed = this.world.update(dt, this.time, this.spreadEnergy);
     if (bloomed > 0) {
       this.events.emit('bloom', bloomed);
-      this.audio.bloom();
+      // a sparkle and a chime where the first few plants of this frame popped up
+      for (const [x, z, flower] of this.world.flora.bloomedNow) {
+        this._v.set(x, this.world.heightAt(x, z) + 0.12, z);
+        this.world.paintMap.colorAt(x, z, this._c);
+        this.fx.burst(this._v, this._c, flower ? 6 : 3, 0.45, 0.022);
+      }
+      const b0 = this.world.flora.bloomedNow[0];
+      if (b0) this.audio.bloom(this._v.set(b0[0], this.world.heightAt(b0[0], b0[1]) + 0.1, b0[1]));
     }
+    // twinkles along the advancing colour front while the magic is spreading
+    if (this.spreadEnergy > 0.15) {
+      const tries = 1 + Math.floor(this.spreadEnergy * 5);
+      for (let k = 0; k < tries; k++) {
+        if (this.world.paintMap.randomFrontCell(this.rng, this._v, this._c)) {
+          this.fx.sparkle(this._v, this._up.set(this.rng.gauss() * 0.05, 0.12 + this.rng.float() * 0.1, this.rng.gauss() * 0.05), this._c.lerp(new THREE.Color(1, 1, 1), 0.4), 0.7 + this.rng.float() * 0.5, 0.018);
+        }
+      }
+    }
+    // 3D audio listener follows the head
+    this.headPosition(this._v);
+    this.headQuaternion(this._q);
+    this._fwd.set(0, 0, -1).applyQuaternion(this._q);
+    this._up.set(0, 1, 0).applyQuaternion(this._q);
+    this.audio.setListener(this._v, this._q, this._fwd, this._up);
 
     this.renderer.render(this.scene, this.camera);
 

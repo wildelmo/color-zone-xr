@@ -66,6 +66,7 @@ export class Brush {
       this.entry = paint.beginStroke(this.brushId);
       this._addPoint(this.hand.tip);
     }
+    if (this.app.fx && this.brushId !== 'bubble') this.app.fx.burst(this.hand.tip, this._color(_c), 10, 0.55, 0.028);
     this.app.events.emit('paintstart', { hand: this.hand, brush: this.brushId });
   }
 
@@ -74,6 +75,7 @@ export class Brush {
     this.painting = false;
     this._flushTail();
     if (this.entry && this.entry.kind === 'tube') this.app.paint.endStroke(this.entry);
+    if (this.app.fx && this.brushId !== 'bubble') this.app.fx.burst(this.hand.tip, this._color(_c), 6, 0.4, 0.022);
     this.entry = null;
     this.app.events.emit('paintend', { hand: this.hand, brush: this.brushId });
   }

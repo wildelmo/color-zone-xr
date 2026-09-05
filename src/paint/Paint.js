@@ -19,6 +19,7 @@ export class Paint {
       glow: new StrokeMaterial(shared),
       sparkle: new StrokeMaterial(shared, { sparkle: true }),
       cotton: new StrokeMaterial(shared, { cotton: true }),
+      halo: new StrokeMaterial(shared, { halo: true }),
     };
     this.stamps = new StampLayer(shared);
     this.group.add(this.stamps.group);
@@ -79,13 +80,26 @@ export class Paint {
   }
 
   /** start a tube stroke; returns the Stroke */
+  _makeHalo(geometry) {
+    const halo = new THREE.Mesh(geometry, this.materials.halo);
+    halo.frustumCulled = true;
+    halo.renderOrder = 12;
+    halo.name = 'stroke-halo';
+    return halo;
+  }
+
   beginStroke(brushId) {
     const stroke = new Stroke({ sides: brushId === 'cotton' ? 10 : 8 });
     const mesh = new THREE.Mesh(stroke.geometry, this.materialFor(brushId));
     mesh.frustumCulled = true;
     mesh.name = 'stroke';
     this.group.add(mesh);
-    const entry = { kind: 'tube', stroke, mesh, batch: null, brushId };
+    let halo = null;
+    if (brushId !== 'cotton') {
+      halo = this._makeHalo(stroke.geometry);
+      this.group.add(halo);
+    }
+    const entry = { kind: 'tube', stroke, mesh, halo, batch: null, brushId };
     this.history.push(entry);
     this.live.push(entry);
     this.strokeCount++;
@@ -127,6 +141,7 @@ export class Paint {
       entry.stroke.dispose();
     } else {
       this.group.remove(entry.mesh);
+      if (entry.halo) this.group.remove(entry.halo);
       entry.stroke.dispose();
       const li = this.live.indexOf(entry);
       if (li >= 0) this.live.splice(li, 1);
@@ -135,13 +150,26 @@ export class Paint {
     return true;
   }
 
+  /** sample points along the most recent stroke (for undo sparkles) */
+  lastStrokePoints(max = 24) {
+    const entry = this.history[this.history.length - 1];
+    if (!entry || entry.kind !== 'tube') return [];
+    const s = entry.stroke;
+    const out = [];
+    const step = Math.max(1, Math.floor(s.count / max));
+    for (let i = 0; i < s.count; i += step) out.push(new THREE.Vector3(s.pts[i * 3], s.pts[i * 3 + 1], s.pts[i * 3 + 2]));
+    return out;
+  }
+
   clearAll() {
     for (const e of this.live) {
       this.group.remove(e.mesh);
+      if (e.halo) this.group.remove(e.halo);
       e.stroke.dispose();
     }
     for (const b of this.batches) {
       this.group.remove(b.mesh);
+      if (b.halo) this.group.remove(b.halo);
       b.mesh.geometry.dispose();
       for (const e of b.entries) e.stroke.dispose();
     }
@@ -164,10 +192,12 @@ export class Paint {
       byMat.get(m).push(e);
     }
     for (const [material, entries] of byMat) {
-      const batch = { material, entries, mesh: null };
+      const batch = { material, entries, mesh: null, halo: null };
       for (const e of entries) {
         this.group.remove(e.mesh);
+        if (e.halo) this.group.remove(e.halo);
         e.mesh = null;
+        e.halo = null;
         e.batch = batch;
         e.stroke.compact();
       }
@@ -179,8 +209,10 @@ export class Paint {
   _rebuildBatch(batch) {
     if (batch.mesh) {
       this.group.remove(batch.mesh);
+      if (batch.halo) this.group.remove(batch.halo);
       batch.mesh.geometry.dispose();
       batch.mesh = null;
+      batch.halo = null;
     }
     if (batch.entries.length === 0) {
       const i = this.batches.indexOf(batch);
@@ -230,6 +262,10 @@ export class Paint {
     batch.mesh = new THREE.Mesh(geo, batch.material);
     batch.mesh.name = 'stroke-batch';
     this.group.add(batch.mesh);
+    if (batch.material !== this.materials.cotton) {
+      batch.halo = this._makeHalo(geo);
+      this.group.add(batch.halo);
+    }
   }
 
   /** everything needed to restore this painting later */

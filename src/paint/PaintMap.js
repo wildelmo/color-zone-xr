@@ -1,45 +1,15 @@
 import * as THREE from 'three';
 import { WORLD } from '../config.js';
 import { smoothstep } from '../util/math.js';
+import { StampRenderer, makeMapTarget } from './StampRenderer.js';
 
 /**
  * Top-down "where has colour landed" map. The GPU side is an RGBA render
  * target that environment shaders sample (rgb = paint colour premultiplied,
  * a = coverage). A coarse CPU grid mirrors it for gameplay questions like
  * "should this flower bloom yet?" and "what % of the island is painted?".
+ * A ping-pong pass lets colour bleed outward while the player is active.
  */
-const stampVert = /* glsl */ `
-attribute vec2 iPos;
-attribute float iRadius;
-attribute vec3 iColor;
-attribute vec2 iParams;
-uniform vec4 mapRect;
-varying vec2 vUv;
-varying vec3 vColor;
-varying vec2 vParams;
-void main() {
-  vec2 world = iPos + position.xy * iRadius;
-  vec2 ndc = (world - mapRect.xy) / mapRect.zw * 2.0 - 1.0;
-  gl_Position = vec4(ndc, 0.0, 1.0);
-  vUv = position.xy;
-  vColor = iColor;
-  vParams = iParams;
-}
-`;
-const stampFrag = /* glsl */ `
-varying vec2 vUv;
-varying vec3 vColor;
-varying vec2 vParams;
-void main() {
-  float d = length(vUv);
-  float a = (1.0 - smoothstep(1.0 - vParams.y, 1.0, d)) * vParams.x;
-  if (a <= 0.002) discard;
-  gl_FragColor = vec4(vColor, a);
-}
-`;
-
-const MAX_STAMPS = 256;
-
 const spreadVert = /* glsl */ `
 varying vec2 vUv;
 void main() {
@@ -80,25 +50,14 @@ export class PaintMap {
     this.res = WORLD.mapRes;
     this.gridRes = WORLD.gridRes;
     this.half = this.size / 2;
+    this.mapRect = new THREE.Vector4(-this.half, -this.half, this.size, this.size);
 
-    const makeTarget = (name) => {
-      const t = new THREE.WebGLRenderTarget(this.res, this.res, {
-        format: THREE.RGBAFormat,
-        type: THREE.UnsignedByteType,
-        minFilter: THREE.LinearFilter,
-        magFilter: THREE.LinearFilter,
-        depthBuffer: false,
-        stencilBuffer: false,
-        generateMipmaps: false,
-      });
-      t.texture.colorSpace = THREE.NoColorSpace;
-      t.texture.name = name;
-      return t;
-    };
-    this.target = makeTarget('paintMap');
-    this.targetB = makeTarget('paintMapB');
+    this.target = makeMapTarget(this.res, 'paintMap');
+    this.targetB = makeMapTarget(this.res, 'paintMapB');
     this.texture = this.target.texture;
     this.textureUniform = null; // set by World so materials follow the ping-pong
+    this.stamper = new StampRenderer(renderer, this.mapRect);
+
     this.spreadMat = new THREE.ShaderMaterial({
       uniforms: { src: { value: null }, texel: { value: new THREE.Vector2(1 / this.res, 1 / this.res) }, rate: { value: 0.1 } },
       vertexShader: spreadVert,
@@ -110,41 +69,10 @@ export class PaintMap {
     const spreadQuad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), this.spreadMat);
     spreadQuad.frustumCulled = false;
     this.spreadScene.add(spreadQuad);
+    this.spreadCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
     this.spreadTimer = 0;
     this.cpuSpreadTimer = 0;
     this.covB = null;
-    this.mapRect = new THREE.Vector4(-this.half, -this.half, this.size, this.size);
-
-    // instanced stamp quads
-    const quad = new THREE.PlaneGeometry(2, 2);
-    const geo = new THREE.InstancedBufferGeometry();
-    geo.index = quad.index;
-    geo.setAttribute('position', quad.attributes.position);
-    this.iPos = new THREE.InstancedBufferAttribute(new Float32Array(MAX_STAMPS * 2), 2).setUsage(THREE.DynamicDrawUsage);
-    this.iRadius = new THREE.InstancedBufferAttribute(new Float32Array(MAX_STAMPS), 1).setUsage(THREE.DynamicDrawUsage);
-    this.iColor = new THREE.InstancedBufferAttribute(new Float32Array(MAX_STAMPS * 3), 3).setUsage(THREE.DynamicDrawUsage);
-    this.iParams = new THREE.InstancedBufferAttribute(new Float32Array(MAX_STAMPS * 2), 2).setUsage(THREE.DynamicDrawUsage);
-    geo.setAttribute('iPos', this.iPos);
-    geo.setAttribute('iRadius', this.iRadius);
-    geo.setAttribute('iColor', this.iColor);
-    geo.setAttribute('iParams', this.iParams);
-    geo.instanceCount = 0;
-    this.stampGeo = geo;
-    const mat = new THREE.ShaderMaterial({
-      uniforms: { mapRect: { value: this.mapRect } },
-      vertexShader: stampVert,
-      fragmentShader: stampFrag,
-      transparent: true,
-      blending: THREE.NormalBlending,
-      depthTest: false,
-      depthWrite: false,
-    });
-    this.stampMesh = new THREE.Mesh(geo, mat);
-    this.stampMesh.frustumCulled = false;
-    this.stampScene = new THREE.Scene();
-    this.stampScene.add(this.stampMesh);
-    this.stampCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
-    this.queue = [];
 
     // CPU mirror
     const n = this.gridRes * this.gridRes;
@@ -152,7 +80,18 @@ export class PaintMap {
     this.col = new Float32Array(n * 3);
     this.islandMask = new Uint8Array(n);
     this.islandCells = 0;
+    this.rebuildMask(terrain);
+    this.progress = 0;
+    this._progressDirty = true;
+    this.cleared = false;
+    this.stampCount = 0;
+  }
+
+  rebuildMask(terrain) {
+    this.terrain = terrain;
     const cell = this.size / this.gridRes;
+    this.islandMask.fill(0);
+    this.islandCells = 0;
     for (let gz = 0; gz < this.gridRes; gz++) {
       for (let gx = 0; gx < this.gridRes; gx++) {
         const x = -this.half + (gx + 0.5) * cell;
@@ -163,108 +102,20 @@ export class PaintMap {
         }
       }
     }
-    this.progress = 0;
-    this._progressDirty = true;
-    this.cleared = false;
-    this.stampCount = 0;
   }
 
-  _clearTarget() {
-    const r = this.renderer;
-    const prevTarget = r.getRenderTarget();
-    const prevColor = new THREE.Color();
-    r.getClearColor(prevColor);
-    const prevAlpha = r.getClearAlpha();
-    const prevXR = r.xr.enabled;
-    r.xr.enabled = false;
-    r.setClearColor(0x000000, 0);
-    r.setRenderTarget(this.target);
-    r.clear(true, false, false);
-    r.setRenderTarget(this.targetB);
-    r.clear(true, false, false);
-    r.setRenderTarget(prevTarget);
-    r.setClearColor(prevColor, prevAlpha);
-    r.xr.enabled = prevXR;
+  _clearTargets() {
+    this.stamper.clear(this.target);
+    this.stamper.clear(this.targetB);
     this.cleared = true;
-  }
-
-  /**
-   * Let colour bleed outward from well-painted areas. energy (0..1) comes
-   * from recent play, so the world only keeps blooming while you're active.
-   */
-  spread(dt, energy, rng) {
-    if (energy < 0.12) return;
-    this.spreadTimer -= dt;
-    this.cpuSpreadTimer -= dt;
-    if (this.spreadTimer <= 0) {
-      this.spreadTimer = 0.12;
-      if (rng.float() < Math.min(1, energy * 1.4)) this._spreadGPU();
-    }
-    if (this.cpuSpreadTimer <= 0) {
-      this.cpuSpreadTimer = 0.5;
-      this._spreadCPU(Math.min(1, energy * 1.4));
-    }
-  }
-
-  _spreadGPU() {
-    const r = this.renderer;
-    const prevTarget = r.getRenderTarget();
-    const prevAutoClear = r.autoClear;
-    const prevXR = r.xr.enabled;
-    r.xr.enabled = false;
-    r.autoClear = false;
-    this.spreadMat.uniforms.src.value = this.target.texture;
-    r.setRenderTarget(this.targetB);
-    r.render(this.spreadScene, this.stampCamera);
-    r.setRenderTarget(prevTarget);
-    r.autoClear = prevAutoClear;
-    r.xr.enabled = prevXR;
-    const t = this.target;
-    this.target = this.targetB;
-    this.targetB = t;
-    this.texture = this.target.texture;
-    if (this.textureUniform) this.textureUniform.value = this.texture;
-  }
-
-  _spreadCPU(strength) {
-    const g = this.gridRes;
-    const cov = this.cov;
-    const col = this.col;
-    if (!this.covB) this.covB = new Float32Array(cov.length);
-    const out = this.covB;
-    out.set(cov);
-    const rate = 0.052 * strength;
-    for (let z = 0; z < g; z++) {
-      for (let x = 0; x < g; x++) {
-        const i = z * g + x;
-        if (cov[i] >= 0.999 || !this.islandMask[i]) continue;
-        let best = -1;
-        let bi = -1;
-        if (x > 0 && cov[i - 1] > best) { best = cov[i - 1]; bi = i - 1; }
-        if (x < g - 1 && cov[i + 1] > best) { best = cov[i + 1]; bi = i + 1; }
-        if (z > 0 && cov[i - g] > best) { best = cov[i - g]; bi = i - g; }
-        if (z < g - 1 && cov[i + g] > best) { best = cov[i + g]; bi = i + g; }
-        const grow = Math.max(0, best - 0.45) * rate;
-        if (grow <= 0) continue;
-        const na = Math.min(1, cov[i] + grow);
-        const w = (na - cov[i]) / Math.max(na, 1e-4);
-        col[i * 3] += (col[bi * 3] - col[i * 3]) * w;
-        col[i * 3 + 1] += (col[bi * 3 + 1] - col[i * 3 + 1]) * w;
-        col[i * 3 + 2] += (col[bi * 3 + 2] - col[i * 3 + 2]) * w;
-        out[i] = na;
-      }
-    }
-    this.cov = out;
-    this.covB = cov;
-    this._progressDirty = true;
   }
 
   /** wipe the world back to sketch */
   clear() {
-    this._clearTarget();
+    this._clearTargets();
     this.cov.fill(0);
     this.col.fill(0);
-    this.queue.length = 0;
+    this.stamper.queue.length = 0;
     this.progress = 0;
     this._progressDirty = true;
     this.stampCount = 0;
@@ -277,9 +128,8 @@ export class PaintMap {
    */
   stamp(x, z, radius, color, strength = 1, soft = 0.7) {
     if (radius <= 0) return;
-    this.queue.push(x, z, radius, color.r, color.g, color.b, strength, soft);
+    this.stamper.stamp(x, z, radius, color.r, color.g, color.b, strength, soft);
     this.stampCount++;
-    // CPU mirror
     const g = this.gridRes;
     const cell = this.size / g;
     const gx0 = Math.max(0, Math.floor((x - radius + this.half) / cell));
@@ -327,6 +177,21 @@ export class PaintMap {
     return out.setRGB(this.col[j], this.col[j + 1], this.col[j + 2]);
   }
 
+  /** world position + colour of a random cell on the colour front (for sparkles), or null */
+  randomFrontCell(rng, out, colorOut) {
+    const g = this.gridRes;
+    const i = rng.int(0, g * g - 1);
+    const c = this.cov[i];
+    if (c < 0.12 || c > 0.55 || !this.islandMask[i]) return null;
+    const cell = this.size / g;
+    const gx = i % g;
+    const gz = Math.floor(i / g);
+    out.set(-this.half + (gx + rng.float()) * cell, 0, -this.half + (gz + rng.float()) * cell);
+    out.y = this.terrain.heightAt(out.x, out.z) + 0.05;
+    colorOut.setRGB(this.col[i * 3], this.col[i * 3 + 1], this.col[i * 3 + 2]);
+    return out;
+  }
+
   /** fraction of island cells that are (mostly) painted */
   computeProgress() {
     if (!this._progressDirty) return this.progress;
@@ -342,37 +207,82 @@ export class PaintMap {
 
   /** Flush queued stamps into the render target. Call once per frame before rendering the scene. */
   flush() {
-    if (!this.cleared) this._clearTarget();
-    if (this.queue.length === 0) return;
+    if (!this.cleared) this._clearTargets();
+    this.stamper.flush(this.target);
+  }
+
+  /**
+   * Let colour bleed outward from well-painted areas. energy (0..1) comes
+   * from recent play, so the world only keeps blooming while you're active.
+   */
+  spread(dt, energy, rng) {
+    if (energy < 0.12) return;
+    this.spreadTimer -= dt;
+    this.cpuSpreadTimer -= dt;
+    if (this.spreadTimer <= 0) {
+      this.spreadTimer = 0.12;
+      if (rng.float() < Math.min(1, energy * 1.4)) this._spreadGPU();
+    }
+    if (this.cpuSpreadTimer <= 0) {
+      this.cpuSpreadTimer = 0.5;
+      this._spreadCPU(Math.min(1, energy * 1.4));
+    }
+  }
+
+  _spreadGPU() {
     const r = this.renderer;
     const prevTarget = r.getRenderTarget();
     const prevAutoClear = r.autoClear;
     const prevXR = r.xr.enabled;
     r.xr.enabled = false;
     r.autoClear = false;
-    r.setRenderTarget(this.target);
-    const q = this.queue;
-    let offset = 0;
-    while (offset < q.length) {
-      const count = Math.min(MAX_STAMPS, (q.length - offset) / 8);
-      for (let i = 0; i < count; i++) {
-        const k = offset + i * 8;
-        this.iPos.setXY(i, q[k], q[k + 1]);
-        this.iRadius.setX(i, q[k + 2]);
-        this.iColor.setXYZ(i, q[k + 3], q[k + 4], q[k + 5]);
-        this.iParams.setXY(i, q[k + 6], q[k + 7]);
-      }
-      this.iPos.needsUpdate = true;
-      this.iRadius.needsUpdate = true;
-      this.iColor.needsUpdate = true;
-      this.iParams.needsUpdate = true;
-      this.stampGeo.instanceCount = count;
-      r.render(this.stampScene, this.stampCamera);
-      offset += count * 8;
-    }
-    q.length = 0;
+    this.spreadMat.uniforms.src.value = this.target.texture;
+    r.setRenderTarget(this.targetB);
+    r.render(this.spreadScene, this.spreadCamera);
     r.setRenderTarget(prevTarget);
     r.autoClear = prevAutoClear;
     r.xr.enabled = prevXR;
+    const t = this.target;
+    this.target = this.targetB;
+    this.targetB = t;
+    this.texture = this.target.texture;
+    if (this.textureUniform) this.textureUniform.value = this.texture;
+  }
+
+  _spreadCPU(strength) {
+    const g = this.gridRes;
+    const cov = this.cov;
+    const col = this.col;
+    if (!this.covB) this.covB = new Float32Array(cov.length);
+    const out = this.covB;
+    out.set(cov);
+    const rate = 0.052 * strength;
+    for (let z = 0; z < g; z++) {
+      for (let x = 0; x < g; x++) {
+        const i = z * g + x;
+        if (cov[i] >= 0.999 || !this.islandMask[i]) continue;
+        let best = -1;
+        let bi = -1;
+        if (x > 0 && cov[i - 1] > best) { best = cov[i - 1]; bi = i - 1; }
+        if (x < g - 1 && cov[i + 1] > best) { best = cov[i + 1]; bi = i + 1; }
+        if (z > 0 && cov[i - g] > best) { best = cov[i - g]; bi = i - g; }
+        if (z < g - 1 && cov[i + g] > best) { best = cov[i + g]; bi = i + g; }
+        const grow = Math.max(0, best - 0.45) * rate;
+        if (grow <= 0) continue;
+        const na = Math.min(1, cov[i] + grow);
+        const w = (na - cov[i]) / Math.max(na, 1e-4);
+        col[i * 3] += (col[bi * 3] - col[i * 3]) * w;
+        col[i * 3 + 1] += (col[bi * 3 + 1] - col[i * 3 + 1]) * w;
+        col[i * 3 + 2] += (col[bi * 3 + 2] - col[i * 3 + 2]) * w;
+        out[i] = na;
+      }
+    }
+    this.cov = out;
+    this.covB = cov;
+    this._progressDirty = true;
+  }
+
+  get queue() {
+    return this.stamper.queue;
   }
 }

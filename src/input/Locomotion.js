@@ -75,6 +75,14 @@ export class Locomotion {
     this.marker.visible = false;
   }
 
+  /** fade in from black (session start) */
+  fadeIn(duration = 1) {
+    this.fadeT = duration;
+    this.fadeDur = duration;
+    this.fade.visible = true;
+    this.fade.material.opacity = 1;
+  }
+
   teleportTo(x, z) {
     const app = this.app;
     app.headPosition(_head);
@@ -85,6 +93,7 @@ export class Locomotion {
     rig.position.y = app.world.heightAt(x, z);
     if (app.mode === 'desktop') app.desktop.pos.set(x, rig.position.y, z);
     this.fadeT = 0.35;
+    this.fadeDur = 0;
     this.fade.visible = true;
     this.teleports++;
     if (app.audio) app.audio.teleport();
@@ -114,9 +123,13 @@ export class Locomotion {
     // blink fade
     if (this.fadeT > 0) {
       this.fadeT -= dt;
-      const a = Math.min(1, this.fadeT / 0.2);
-      this.fade.material.opacity = a * 0.9;
-      if (this.fadeT <= 0) this.fade.visible = false;
+      const dur = this.fadeDur || 0.2;
+      const a = Math.min(1, this.fadeT / dur);
+      this.fade.material.opacity = a * (this.fadeDur ? 1 : 0.9);
+      if (this.fadeT <= 0) {
+        this.fade.visible = false;
+        this.fadeDur = 0;
+      }
     }
     // snap turn on right stick flick
     if (R.connected && app.renderer.xr.isPresenting) {

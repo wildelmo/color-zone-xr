@@ -32,8 +32,8 @@ void main() {
   vec3 pcol = pm.rgb / max(cov, 0.002);
   float reveal = smoothstep(0.05, 0.5, cov);
   float d = distance(vWorldPos.xz, center) / radius;
-  vec3 deepG = vec3(0.55, 0.58, 0.64);
-  vec3 shallowG = vec3(0.70, 0.72, 0.78);
+  vec3 deepG = vec3(0.70, 0.68, 0.71);
+  vec3 shallowG = vec3(0.86, 0.84, 0.82);
   vec3 deepC = vec3(0.08, 0.42, 0.85);
   vec3 shallowC = vec3(0.25, 0.75, 0.95);
   vec3 grey = mix(deepG, shallowG, d);

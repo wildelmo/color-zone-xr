@@ -149,7 +149,7 @@ export class Bubbles {
       }
     }
     app.world.paintMap.stamp(p.x, p.z, 1.2 + r * 6, c, 0.7, 0.8);
-    if (app.audio && !quiet) app.audio.pop(r);
+    if (app.audio && !quiet) app.audio.pop(r, p);
     if (hand) hand.pulse(0.7, 50);
     app.events.emit('bubblepop', { position: p.clone(), color: c.clone(), radius: r, byHand: !!hand });
   }
@@ -166,12 +166,11 @@ export class Bubbles {
     this.spawnTimer -= dt;
     if (this.spawnTimer <= 0) {
       this.spawnTimer = 2.2 + rng.float() * 3.5;
-      const pond = WORLD.pond;
-      const a = rng.float() * Math.PI * 2;
-      const d = Math.sqrt(rng.float()) * pond.radius * 0.6;
-      _p.set(pond.x + Math.cos(a) * d, world.terrain.waterLevel + 0.05, pond.z + Math.sin(a) * d);
+      const top = world.fountain ? world.fountain.top : new THREE.Vector3(WORLD.pond.x, world.terrain.waterLevel + 1, WORLD.pond.z);
+      _p.set(top.x + rng.gauss() * 0.12, top.y + 0.05, top.z + rng.gauss() * 0.12);
       const col = app.paint.palette[rng.int(0, app.paint.palette.length - 1)];
-      this.spawn(_p, col, 0.07 + rng.float() * 0.1);
+      const i = this.spawn(_p, col, 0.07 + rng.float() * 0.1);
+      this.vel[i].set(rng.gauss() * 0.15, 0.35, rng.gauss() * 0.15);
       if (app.audio) app.audio.bubbleBlow(0.5);
     }
     const head = app.headPosition(_head);

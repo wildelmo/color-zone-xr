@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { PropMaterial, glowTexture } from '../util/PropMaterial.js';
 import { makeLabel } from '../ui/Text.js';
 import { damp } from '../util/math.js';
+import { BlobShadow } from '../util/BlobShadow.js';
 
 /**
  * Dot — a little floating paint-drop friend who hovers at your side,
@@ -96,6 +97,9 @@ export class Buddy {
     this.sayQueue = [];
     this.yaw = 0;
     this.lookAtTip = 0;
+    this.wave = 0;
+    this.shadow = new BlobShadow(app, 0.16);
+    this.group.add(this.shadow.mesh);
 
     const ev = app.events;
     ev.on('paintstart', () => this.react(0.5));
@@ -129,6 +133,25 @@ export class Buddy {
 
   say(text, duration = 2) {
     this.sayQueue.push({ text, duration });
+  }
+
+  /** pop into view right in front of the player (intro) with a little wave */
+  summon() {
+    const app = this.app;
+    app.headPosition(_head);
+    app.headQuaternion(_q);
+    _fwd.set(0, 0, -1).applyQuaternion(_q);
+    _fwd.y = 0;
+    if (_fwd.lengthSq() < 1e-4) _fwd.set(0, 0, -1);
+    _fwd.normalize();
+    _right.set(_fwd.z, 0, -_fwd.x);
+    this.pos.copy(_head).addScaledVector(_fwd, 1.15).addScaledVector(_right, -0.3);
+    this.pos.y = _head.y - 0.12;
+    this.group.position.copy(this.pos);
+    this.wave = 1.6;
+    this.react(1);
+    this.spinVel += 6;
+    if (app.fx) app.fx.burst(this.pos, this.color, 30, 1.2, 0.04);
   }
 
   update(dt, time) {
@@ -174,10 +197,19 @@ export class Buddy {
     this.yaw += dy * (1 - Math.exp(-dt * 6));
     this.spinVel *= Math.exp(-dt * 3.5);
     this.spin += this.spinVel * dt;
+    if (Math.abs(this.spinVel) < 0.6) {
+      // settle back to facing forward (nearest full turn)
+      const rest = Math.round(this.spin / (Math.PI * 2)) * Math.PI * 2;
+      this.spin = damp(this.spin, rest, 6, dt);
+    }
     this.body.rotation.set(0, this.yaw + this.spin, 0);
     const pitch = Math.atan2(_look.y - this.group.position.y, Math.hypot(dx, dz));
     this.body.rotation.x = -pitch * 0.5;
     this.body.rotation.z = Math.sin(time * 1.7) * 0.06 * (1 + this.excite);
+    if (this.wave > 0) {
+      this.wave -= dt;
+      this.body.rotation.z += Math.sin(time * 14) * 0.35 * Math.min(1, this.wave);
+    }
 
     // squash & stretch
     this.squash = damp(this.squash, 0, 5, dt);
@@ -192,6 +224,11 @@ export class Buddy {
     this.bodyMat.emissive.copy(this.color).multiplyScalar(0.12 + this.excite * 0.3);
     this.glow.material.color.copy(this.color);
     this.glow.material.opacity = 0.25 + this.excite * 0.4;
+
+    // grounded by a soft shadow
+    this.shadow.mesh.position.set(0, 0, 0);
+    this.shadow.update(this.group.position, 0.18, 5);
+    this.shadow.mesh.position.sub(this.group.position);
 
     // blink
     this.blinkT -= dt;

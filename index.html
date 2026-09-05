@@ -77,8 +77,8 @@
     .spinner { width: 54px; height: 54px; border-radius: 50%; border: 6px solid #fff; border-top-color: var(--pink); border-right-color: var(--blue); border-bottom-color: var(--yellow); animation: spin 1s linear infinite; margin-bottom: 14px; }
     @keyframes spin { to { transform: rotate(360deg); } }
     #desktop-help {
-      position: fixed; left: 16px; bottom: 14px; padding: 10px 14px; border-radius: 14px; background: rgba(255, 255, 255, 0.75);
-      backdrop-filter: blur(10px); font-size: 12.5px; color: #4a3d6b; line-height: 1.5; pointer-events: none; max-width: 420px;
+      position: fixed; left: 50%; bottom: 14px; transform: translateX(-50%); padding: 8px 16px; border-radius: 999px; background: rgba(255, 255, 255, 0.7);
+      backdrop-filter: blur(10px); font-size: 12px; color: #4a3d6b; line-height: 1.5; pointer-events: none; white-space: nowrap;
     }
     #desktop-help.hidden { display: none; }
     #desktop-help b { color: var(--grape); }
@@ -114,8 +114,7 @@
   </div>
 
   <div id="desktop-help" class="hidden">
-    <b>Desktop preview</b> — click to look around · <b>WASD</b> walk · <b>Left mouse</b> paint · <b>Right mouse</b> throw paint ·
-    <b>Wheel / Q E</b> brush size · <b>Tab</b> next brush · <b>1–9 0 - =</b> colours · <b>Z</b> undo · <b>M</b> menu · <b>Esc</b> back
+    <b>Click</b> look · <b>WASD</b> walk · <b>Left mouse</b> paint · <b>Right mouse</b> throw · <b>Wheel</b> size · <b>Tab</b> brush · <b>1–9</b> colours · <b>Z</b> undo · <b>M</b> menu · <b>Esc</b> back
   </div>
 
   <script type="module" src="./src/main.js"></script>
