@@ -1,0 +1,24 @@
+{
+  "name": "color-zone-xr",
+  "version": "1.0.0",
+  "description": "Color Zone XR \u2014 a joyful WebXR painting playground for Meta Quest where every stroke brings a sketched island back to life.",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "start": "node tools/serve.js",
+    "dev": "node tools/serve.js",
+    "test": "node tools/test/run.mjs",
+    "test:quick": "node tools/test/run.mjs --quick",
+    "lint": "eslint src tools",
+    "icons": "node tools/make-icons.mjs"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.0.0",
+    "eslint": "^9.0.0",
+    "playwright": "1.56.1"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "MIT"
+}
