@@ -26,7 +26,11 @@ import { HandVisual } from './input/HandVisual.js';
 import { Intro } from './systems/Intro.js';
 import { warmMaterials } from './util/Warmup.js';
 import { SaveGame } from './systems/SaveGame.js';
+<<<<<<< HEAD
 import { Guide } from './systems/Guide.js';
+=======
+import { Pond } from './play/Pond.js';
+>>>>>>> play/pond
 
 /**
  * Color Zone XR — application root. Owns the renderer, the player rig,
@@ -118,6 +122,8 @@ export class App {
     this.hintPulse = false;
     // ---- play layer: the things to do (each is a self-contained system) ----
     // (systems register themselves here; order = update order)
+    this.pond = this.addSystem(new Pond(this)); // the living pond: feed the fountain, koi, bubbles near you
+    this.scene.add(this.pond.group);
     this.guide = this.addSystem(new Guide(this)); // Dot leads you to the next thing (keep last: it looks at the other play systems)
     this.scene.add(this.guide.group);
     // ---- end play layer ----

@@ -1,10 +1,11 @@
 import * as THREE from 'three';
-import { WORLD } from '../config.js';
 
 /**
- * Soap bubbles: they rise from the pond (and from the Bubble brush), drift
- * toward you, and pop with confetti, a chime and a splash of colour on the
- * ground below when you touch them with a wand.
+ * Soap bubbles: blooming ground along the colour front near you blows them
+ * (so there are always some within reach), the fountain adds more once it
+ * has been fed, and the Bubble brush makes them by hand. They drift toward
+ * you and pop with confetti, a chime and a splash of colour on the ground
+ * below when you touch them with a wand.
  */
 const vert = /* glsl */ `
 attribute float wobble;
@@ -59,6 +60,7 @@ const _m = new THREE.Matrix4();
 const _q = new THREE.Quaternion();
 const _s = new THREE.Vector3();
 const _head = new THREE.Vector3();
+const _c = new THREE.Color();
 
 export class Bubbles {
   constructor(app, capacity = 40) {
@@ -94,12 +96,16 @@ export class Bubbles {
     this.mesh.frustumCulled = false;
     this.mesh.renderOrder = 15;
     this.mesh.name = 'bubbles';
-    this.spawnTimer = 3;
+    this.spawnTimer = 1.5;
     this.aliveCount = 0;
     this.popCount = 0;
+    this.spawnCount = 0; // every bubble ever blown
+    this.ambientCount = 0; // bubbles blown by the ground near the player
+    this.lastAmbient = new THREE.Vector3(); // where the newest ambient bubble rose
   }
 
-  spawn(p, color, radius = 0.1, vel = null) {
+  /** blow a bubble at p; life in seconds (default 14–24 s) */
+  spawn(p, color, radius = 0.1, vel = null, life = null) {
     let i = -1;
     let oldest = -1;
     let oldestAge = -1;
@@ -118,12 +124,13 @@ export class Bubbles {
       this.alive[i] = 0;
     }
     this.alive[i] = 1;
+    this.spawnCount++;
     this.pos[i].copy(p);
     this.vel[i].set(0, 0.12, 0);
     if (vel) this.vel[i].addScaledVector(vel, 0.25);
     this.radius[i] = radius;
     this.age[i] = 0;
-    this.life[i] = 18 + this.app.rng.float() * 22;
+    this.life[i] = life !== null ? life : 14 + this.app.rng.float() * 10;
     this.colors[i].copy(color);
     this.wobble.array[i] = this.app.rng.float() * 3;
     this.wobble.needsUpdate = true;
@@ -158,22 +165,63 @@ export class Bubbles {
     for (let i = 0; i < this.capacity; i++) if (this.alive[i]) this.pop(i, null, true);
   }
 
+  /**
+   * A spot within 6 m of the head where colour is blooming, or null. Samples the
+   * disc around the player directly (a global randomFrontCell almost never lands
+   * near a fresh player) and prefers the colour front (coverage 0.12–0.55) over
+   * fully painted ground, so bubbles rise where the flowers are popping up.
+   */
+  _frontNearHead(head, out, colorOut) {
+    const world = this.app.world;
+    const pm = world.paintMap;
+    const terrain = world.terrain;
+    const rng = this.app.rng;
+    let bestX = 0;
+    let bestZ = 0;
+    let bestScore = 0;
+    for (let k = 0; k < 8; k++) {
+      const a = rng.float() * Math.PI * 2;
+      const d = 1.5 + Math.sqrt(rng.float()) * 4.5;
+      const x = head.x + Math.cos(a) * d;
+      const z = head.z + Math.sin(a) * d;
+      if (!terrain.isOnIsland(x, z, 6) || terrain.isWater(x, z)) continue;
+      const c = pm.coverageAt(x, z);
+      if (c < 0.12) continue;
+      const score = c <= 0.55 ? 2 : 1;
+      if (score > bestScore) {
+        bestScore = score;
+        bestX = x;
+        bestZ = z;
+        if (score === 2) break;
+      }
+    }
+    if (!bestScore) return null;
+    out.set(bestX, terrain.heightAt(bestX, bestZ) + 0.08, bestZ);
+    pm.colorAt(bestX, bestZ, colorOut);
+    const pal = this.app.paint.palette;
+    if (colorOut.r + colorOut.g + colorOut.b < 0.15) colorOut.copy(pal[rng.int(0, pal.length - 1)]);
+    return out;
+  }
+
   update(dt, time) {
     const app = this.app;
     const world = app.world;
     const rng = app.rng;
-    // ambient bubbles from the pond
+    const head = app.headPosition(_head);
+    const wl = world.terrain.waterLevel;
+    // ambient bubbles: blooming ground along the colour front near the player blows them
+    // (from minute one, wherever you are painting); the fountain only bubbles once fed (Props.js)
     this.spawnTimer -= dt;
     if (this.spawnTimer <= 0) {
-      this.spawnTimer = 2.2 + rng.float() * 3.5;
-      const top = world.fountain ? world.fountain.top : new THREE.Vector3(WORLD.pond.x, world.terrain.waterLevel + 1, WORLD.pond.z);
-      _p.set(top.x + rng.gauss() * 0.12, top.y + 0.05, top.z + rng.gauss() * 0.12);
-      const col = app.paint.palette[rng.int(0, app.paint.palette.length - 1)];
-      const i = this.spawn(_p, col, 0.07 + rng.float() * 0.1);
-      this.vel[i].set(rng.gauss() * 0.15, 0.35, rng.gauss() * 0.15);
-      if (app.audio) app.audio.bubbleBlow(0.5);
+      this.spawnTimer = 2 + rng.float() * 2;
+      if (this._frontNearHead(head, _p, _c)) {
+        const i = this.spawn(_p, _c, 0.07 + rng.float() * 0.1, null, 10 + rng.float() * 10);
+        this.vel[i].set(rng.gauss() * 0.15, 0.45, rng.gauss() * 0.15);
+        this.ambientCount++;
+        this.lastAmbient.copy(_p);
+        if (app.audio) app.audio.bubbleBlow(0.35);
+      }
     }
-    const head = app.headPosition(_head);
     let count = 0;
     for (let i = 0; i < this.capacity; i++) {
       if (!this.alive[i]) continue;
@@ -185,17 +233,18 @@ export class Bubbles {
         this.pop(i, null, true);
         continue;
       }
-      // buoyancy, gentle drift toward the player, wind wobble
+      // buoyancy, a steady drift toward the player (terminal ~0.7 m/s so they actually arrive), wind wobble
       const targetY = 0.9 + Math.sin(time * 0.5 + this.wobble.array[i] * 5) * 0.4 + r * 3;
-      const gy = world.heightAt(p.x, p.z);
+      let gy = world.heightAt(p.x, p.z);
+      if (gy < wl && world.terrain.isWater(p.x, p.z)) gy = wl; // bubbles float on the pond, not into it
       const h = p.y - gy;
       v.y += ((targetY - h) * 0.25 - v.y * 0.6) * dt;
       const dx = head.x - p.x;
       const dz = head.z - p.z;
       const dist = Math.hypot(dx, dz) + 1e-3;
       if (dist > 1.2) {
-        v.x += ((dx / dist) * 0.12 - v.x * 0.5) * dt;
-        v.z += ((dz / dist) * 0.12 - v.z * 0.5) * dt;
+        v.x += ((dx / dist) * 0.35 - v.x * 0.5) * dt;
+        v.z += ((dz / dist) * 0.35 - v.z * 0.5) * dt;
       } else {
         v.x -= v.x * 0.5 * dt;
         v.z -= v.z * 0.5 * dt;
