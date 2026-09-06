@@ -215,7 +215,32 @@ export class App {
   stopDesktop() {
     this.desktop.disable();
     this.mode = 'attract';
+    if (this.audio) this.audio.pause();
     this.events.emit('modechange', this.mode);
+  }
+
+  /**
+   * A true exit: save, leave VR, silence the audio for good and stop the
+   * frame loop, so the page is inert afterwards (main.js shows a goodbye).
+   */
+  async exitVR() {
+    if (this.exited) return;
+    this.exited = true;
+    for (const b of this.brushes) b.cancel();
+    if (this.saveGame && this.saveGame.dirty) this.saveGame.save();
+    if (this.audio) this.audio.shutdown();
+    const session = this.session;
+    if (session) {
+      try {
+        await session.end();
+      } catch (e) {
+        /* already ending */
+      }
+    } else if (this.mode === 'desktop') {
+      this.stopDesktop();
+    }
+    this.renderer.setAnimationLoop(null);
+    this.events.emit('exit');
   }
 
   async isVRSupported() {
@@ -265,6 +290,7 @@ export class App {
     this.camera.position.set(0, WORLD.eyeHeight, 0);
     this.camera.rotation.set(0, 0, 0);
     this.onResize();
+    if (this.audio && !this.exited) this.audio.pause(); // headset off / system exit: go quiet until the next session
     this.events.emit('modechange', this.mode);
     this.events.emit('sessionend');
   }

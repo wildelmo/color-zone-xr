@@ -87,6 +87,7 @@ export class Menu {
     row2.forEach((b, i) => {
       this.buttons.push({ ...b, rect: [x0 + i * (bw + gap), 410, bw, 175] });
     });
+    this.buttons.push({ id: 'exit', icon: 'exit', label: 'Exit', rect: [PW - 480, 36, 200, 84], small: true, confirm: 'Sure?' });
     this.buttons.push({ id: 'close', icon: 'check', label: 'Done', rect: [PW - 250, 36, 200, 84], small: true });
   }
 
@@ -256,6 +257,10 @@ export class Menu {
     else if (b.id === 'newworld') app.newWorld();
     else if (b.id === 'close') {
       this.close();
+      return;
+    } else if (b.id === 'exit') {
+      this.close();
+      app.exitVR();
       return;
     }
     if (app.audio) app.audio.select(0.6);

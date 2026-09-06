@@ -503,10 +503,28 @@ check(errors.length === 0, errors.length ? 'page errors: ' + errors.join(' | ') 
 check(consoleErrors.length === 0, consoleErrors.length ? 'console errors: ' + consoleErrors.slice(0, 3).join(' | ') : 'no console errors');
 console.log(`  · draw calls ${s.drawCalls}, triangles ${s.triangles}`);
 
-await page.evaluate(() => window.__xrEmu.endSession());
-await page.waitForTimeout(400);
-s = await state(page);
-check(!s.presenting && s.mode === 'attract', 'session ended cleanly');
+console.log('\n▶ Exit');
+{
+  // the menu's Exit button (confirm, then go) ends the session, silences the audio and stops the loop
+  await page.evaluate(async () => {
+    const a = window.__czx;
+    const b = a.menu.buttons.find((x) => x.id === 'exit');
+    a.menu.activate(b); // arms the confirmation
+    a.menu.activate(b); // confirmed
+    await new Promise((r) => setTimeout(r, 600));
+  });
+  s = await state(page);
+  check(!s.presenting && s.mode === 'attract', 'Exit ended the session cleanly');
+  const after = await page.evaluate(async () => {
+    const a = window.__czx;
+    const f0 = a.frame;
+    await new Promise((r) => setTimeout(r, 500));
+    return { exited: a.exited, framesAdvanced: a.frame - f0, audioState: a.audio.ctx ? a.audio.ctx.state : 'none', audioReady: a.audio.ready, goodbye: !document.getElementById('goodbye').classList.contains('hidden') && document.getElementById('overlay').classList.contains('bye') };
+  });
+  check(after.exited && after.framesAdvanced === 0, `the frame loop stopped (${after.framesAdvanced} frames in 0.5 s)`);
+  check(after.audioState === 'closed' && !after.audioReady, `audio shut down (context ${after.audioState})`);
+  check(after.goodbye, 'the goodbye screen is showing');
+}
 
 await browser.close();
 server.close();

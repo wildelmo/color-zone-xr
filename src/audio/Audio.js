@@ -47,6 +47,7 @@ export class Audio {
         /* ignore */
       }
     }
+    if (this.master && !this.muted) this.master.gain.setTargetAtTime(0.8, this.ctx.currentTime, 0.05);
     return this.ctx.state === 'running';
   }
 
@@ -186,6 +187,36 @@ export class Audio {
       this._tone(f, { type: 'triangle', attack: 0.008, decay: 0.07, gain: 0.05, sweepTo: f * (Math.random() < 0.5 ? 1.12 : 0.9), sweepTime: 0.06, reverb: 0.25, when: i * 0.085, pos });
       this._tone(f * 2.01, { type: 'sine', attack: 0.005, decay: 0.05, gain: 0.015, reverb: 0.2, when: i * 0.085, pos });
     }
+  }
+
+  /** go silent between sessions (headset off, back on the title screen); resume() brings it back */
+  pause() {
+    if (!this.ctx) return;
+    try {
+      if (this.master) this.master.gain.setTargetAtTime(0, this.ctx.currentTime, 0.05);
+      if (this.ctx.state === 'running') this.ctx.suspend();
+    } catch (e) {
+      /* ignore */
+    }
+  }
+
+  /** a true stop: fade, then close the context so nothing can make a sound again */
+  shutdown() {
+    if (!this.ctx) return;
+    const ctx = this.ctx;
+    try {
+      if (this.master) this.master.gain.setTargetAtTime(0, ctx.currentTime, 0.05);
+    } catch (e) {
+      /* ignore */
+    }
+    this.ready = false;
+    setTimeout(() => {
+      try {
+        ctx.close();
+      } catch (e) {
+        /* ignore */
+      }
+    }, 300);
   }
 
   setMuted(m) {

@@ -61,9 +61,18 @@ app.events.on('modechange', (mode) => {
 });
 
 app.events.on('sessionend', () => {
+  if (app.exited) return;
   btnVR.disabled = false;
   showOverlay(true);
 });
+
+app.events.on('exit', () => {
+  overlay.classList.add('bye');
+  document.getElementById('goodbye').classList.remove('hidden');
+  showOverlay(true);
+});
+
+document.getElementById('btn-again').addEventListener('click', () => location.reload());
 
 window.addEventListener('keydown', (e) => {
   if (e.code === 'Escape' && app.mode === 'desktop' && !document.pointerLockElement) {

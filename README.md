@@ -81,7 +81,7 @@ That serves `http://localhost:8080` for the desktop preview and, if `openssl` is
 | Teleport | Push left stick forward, aim, release | — | WASD to walk |
 | Snap turn 30° | Flick right stick left / right | — | Mouse look |
 
-The floating menu (point a wand's laser at a button and pull the trigger, or just poke it) has all six brushes, brush size, sound, undo, *Clear*, and *New world*, which rolls a brand-new island.
+The floating menu (point a wand's laser at a button and pull the trigger, or just poke it) has all six brushes, brush size, sound, undo, *Clear*, *New world*, which rolls a brand-new island, and *Exit*, which saves, leaves VR and shuts the app down completely (no sound, no rendering) until you press *Play again*.
 
 ## Brushes
 
