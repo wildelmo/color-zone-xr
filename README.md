@@ -16,7 +16,28 @@ npm start          # http://localhost:8080 on desktop (drag to look around)
                    # https://<LAN-ip>:8443 on a Quest (accept the certificate warning once)
 npm run shot       # screenshots from six directions -> docs/screenshots/
 npm run shot -- --frames=48 --travel=900   # frames of the ride, for checking parallax
+npm test           # exit and pause behaviour in an emulated Quest
 ```
+
+## Leaving the ride
+
+- **In VR:** hold **B** or **Y** for 1.5 seconds. A ring fills up in front of you; letting go cancels.
+- **On the page:** the **Quit** button.
+
+Quitting really stops everything. It ends the VR session, stops rendering, runs
+every module's shutdown hook (sound will be closed there), frees the GPU and
+destroys the WebGL context. Then it moves the tab to a static `ended.html`
+page, so none of the app's code is left running or holding memory. A web page
+can't close its own tab, so this is the closest thing to closing it.
+
+Leaving VR any other way (the Quest menu, taking the headset off) **pauses**:
+nothing runs until you choose Back to VR, Watch here or Quit. A hidden tab pauses too.
+
+`npm test` checks all of this in an emulated Quest (see `tools/test/exit.mjs`).
+Every new module that starts something outside the render loop (audio, timers,
+workers) must register pause and shutdown hooks with `src/lifecycle.js`.
+
+## Palettes
 
 Add `?palette=summer` or `?palette=castle` to the URL to try another palette.
 The default is `seaTrain`.

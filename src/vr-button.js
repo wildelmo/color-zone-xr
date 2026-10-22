@@ -1,21 +1,10 @@
-/** "Enter VR" button. Shown only when the browser supports immersive VR. */
-export async function setupVRButton(renderer) {
-  const button = document.getElementById('enter-vr');
-  if (!navigator.xr || !(await navigator.xr.isSessionSupported('immersive-vr').catch(() => false))) return;
-  button.hidden = false;
+/** Starting VR. Needs a user gesture (a click) on the page. */
+export async function vrSupported() {
+  return Boolean(navigator.xr) && navigator.xr.isSessionSupported('immersive-vr').catch(() => false);
+}
 
-  let session = null;
-  button.addEventListener('click', async () => {
-    if (session) {
-      await session.end();
-      return;
-    }
-    session = await navigator.xr.requestSession('immersive-vr', { optionalFeatures: ['local-floor'] });
-    session.addEventListener('end', () => {
-      session = null;
-      button.textContent = 'Enter VR';
-    });
-    await renderer.xr.setSession(session);
-    button.textContent = 'Exit VR';
-  });
+export async function enterVR(renderer) {
+  if (renderer.xr.isPresenting) return;
+  const session = await navigator.xr.requestSession('immersive-vr', { optionalFeatures: ['local-floor'] });
+  await renderer.xr.setSession(session);
 }

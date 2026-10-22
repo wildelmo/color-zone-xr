@@ -261,7 +261,7 @@ function bakeCloud(renderer, { seed, kind, sunLocal, res = 1 }) {
   renderer.setRenderTarget(target);
   renderer.render(bakeScene, bakeCamera);
   renderer.setRenderTarget(previous);
-  return { texture: target.texture, baseFrac: baseY / h, aspect: h / w };
+  return { target, baseFrac: baseY / h, aspect: h / w };
 }
 
 function cloudMaterial(texture, haze) {
@@ -312,7 +312,7 @@ const VIEWPOINT = new THREE.Vector3(0, 1.2, 0);
  * One cloud panel at a fixed spot in the world: `home` is the centre of its
  * flat base (metres), `width` its width in metres.
  */
-function makeCloud(renderer, { home, width, kind, seed, haze = 0, res = 1 }) {
+function makeCloud(renderer, { home, width, kind, seed, haze = 0, res = 1, targets }) {
   // Light the way a background painter does rather than physically: the sun
   // always rakes across the cloud from the side it is really on, slightly
   // above and in front, so every cloud shows a sunlit side and a shadow side.
@@ -324,9 +324,10 @@ function makeCloud(renderer, { home, width, kind, seed, haze = 0, res = 1 }) {
   const side = Math.sign(physical.x) || 1;
   const sunLocal = new THREE.Vector3(side * 0.78, 0.55, 0.12).normalize(); // x right, y up, z toward the viewer
 
-  const { texture, baseFrac, aspect } = bakeCloud(renderer, { seed, kind, sunLocal, res });
+  const { target, baseFrac, aspect } = bakeCloud(renderer, { seed, kind, sunLocal, res });
+  targets.push(target);
   const h = width * aspect;
-  const mesh = new THREE.Mesh(new THREE.PlaneGeometry(width, h), cloudMaterial(texture, haze));
+  const mesh = new THREE.Mesh(new THREE.PlaneGeometry(width, h), cloudMaterial(target.texture, haze));
   mesh.name = `cloud-${kind}`;
   mesh.userData = { home, lift: h * (0.5 - baseFrac) };
   return mesh;
@@ -349,13 +350,14 @@ export function createClouds(renderer, seed = 7) {
   const rng = mulberry32(seed);
   let s = seed * 1000;
   const layers = [];
+  const targets = [];
   const layer = (name, length) => {
     const l = { name, length, clouds: [] };
     layers.push(l);
     return l;
   };
   const add = (l, spec) => {
-    const mesh = makeCloud(renderer, { ...spec, seed: s++ });
+    const mesh = makeCloud(renderer, { ...spec, seed: s++, targets });
     l.clouds.push(mesh);
     group.add(mesh);
   };
@@ -424,5 +426,12 @@ export function createClouds(renderer, seed = 7) {
     }
   }
   update(0);
-  return { group, update };
+
+  /** Free the baked cloud paintings and the painting pass itself. */
+  function dispose() {
+    for (const t of targets) t.dispose();
+    bakeMaterial.dispose();
+    bakeScene.traverse((o) => o.geometry?.dispose());
+  }
+  return { group, update, dispose };
 }

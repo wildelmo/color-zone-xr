@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sea Train: ride ended</title>
+  <!-- Deliberately static: no scripts, so nothing from the ride keeps running. -->
+  <style>
+    html, body { margin: 0; height: 100%; }
+    body {
+      display: grid; place-items: center; text-align: center;
+      font: 18px/1.5 system-ui, sans-serif; color: #0b5f8f;
+      background: linear-gradient(#01abe2, #86d9e7 70%, #d3eced);
+    }
+    main { background: rgb(255 255 255 / 0.9); padding: 32px 40px; border-radius: 20px; margin: 16px; }
+    h1 { margin: 0 0 8px; font-size: 28px; }
+    p { margin: 0 0 20px; }
+    a {
+      display: inline-block; font-weight: 600; padding: 10px 22px; border-radius: 999px;
+      background: #0b7cb9; color: #fff; text-decoration: none;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>The ride has ended</h1>
+    <p>Everything has been shut down. You can close this tab.</p>
+    <a href="./">Ride again</a>
+  </main>
+</body>
+</html>

@@ -3,8 +3,10 @@ import { createSky, SKY_RADIUS } from './sky.js';
 import { createClouds } from './clouds.js';
 import { createWater } from './water.js';
 import { PALETTE, PALETTE_NAME } from './palette.js';
-import { setupVRButton } from './vr-button.js';
+import { vrSupported, enterVR } from './vr-button.js';
 import { createMotion } from './motion.js';
+import { createLifecycle } from './lifecycle.js';
+import { createExitGesture } from './exit-gesture.js';
 
 const EYE_HEIGHT = 1.2; // seated, metres above the train floor
 
@@ -32,6 +34,21 @@ function placeWorld(travelled) {
   water.material.uniforms.travelled.value = travelled;
 }
 
+const clock = new THREE.Clock();
+let frames = 0;
+function frame() {
+  const dt = clock.getDelta();
+  placeWorld(motion.step(dt));
+  exitGesture.update(dt);
+  renderer.render(scene, camera);
+  if (++frames === 2) window.__ready = true;
+}
+
+const app = createLifecycle({ renderer, scene, frame });
+app.onShutdown(clouds.dispose);
+app.onResume(() => clock.getDelta()); // don't count the paused time as travel
+const exitGesture = createExitGesture({ renderer, scene, onExit: app.quit });
+
 // Desktop: drag to look around.
 const look = { yaw: 0, pitch: 4 };
 function applyLook() {
@@ -51,6 +68,7 @@ renderer.domElement.addEventListener('pointermove', (e) => {
   look.pitch += (e.clientY - drag.y) * k;
   drag = { x: e.clientX, y: e.clientY };
   applyLook();
+  if (app.state === 'paused') renderer.render(scene, camera);
 });
 renderer.domElement.addEventListener('pointerup', () => { drag = null; });
 
@@ -58,19 +76,32 @@ window.addEventListener('resize', () => {
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
+  if (app.state === 'paused') renderer.render(scene, camera);
 });
 
-setupVRButton(renderer);
-
-const clock = new THREE.Clock();
-let frames = 0;
-renderer.setAnimationLoop(() => {
-  placeWorld(motion.step(clock.getDelta()));
-  renderer.render(scene, camera);
-  if (++frames === 2) window.__ready = true;
+// Page controls: Enter VR and Quit, plus the panel shown while paused.
+const $ = (id) => document.getElementById(id);
+const startVR = () => enterVR(renderer).then(app.start).catch((e) => console.error('Could not start VR:', e));
+vrSupported().then((ok) => {
+  $('enter-vr').hidden = !ok;
+  $('resume-vr').hidden = !ok;
 });
+$('enter-vr').addEventListener('click', startVR);
+$('resume-vr').addEventListener('click', startVR);
+$('resume-here').addEventListener('click', () => app.start());
+$('quit').addEventListener('click', app.quit);
+$('quit-paused').addEventListener('click', app.quit);
+app.onChange((state) => {
+  $('paused').hidden = state !== 'paused';
+});
+$('palette-name').textContent = PALETTE_NAME;
 
-// Hooks for the screenshot tool: window.__view(yawDeg, pitchDeg, travelledMetres).
+app.start();
+
+// Hooks for tests and the screenshot tool.
+window.__app = app;
+window.__frames = () => frames;
+// window.__view(yawDeg, pitchDeg, travelledMetres): stop the loop and render one still.
 window.__view = (yaw, pitch, travelled = 0) => {
   renderer.setAnimationLoop(null);
   look.yaw = yaw;
@@ -80,4 +111,3 @@ window.__view = (yaw, pitch, travelled = 0) => {
   placeWorld(travelled);
   renderer.render(scene, camera);
 };
-document.getElementById('palette-name').textContent = PALETTE_NAME;
