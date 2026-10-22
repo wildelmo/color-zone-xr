@@ -2,6 +2,7 @@
  * Module 3 (placeholder): a calm sea out to the horizon.
  * Colored by how far below the horizon you look, from the palette ramp.
  * Glitter, ripples and reflections come in the full water module.
+ * The plane stays centred on the train; its paint scrolls with `travelled`.
  */
 import * as THREE from 'three';
 import { PALETTE } from './palette.js';
@@ -11,6 +12,7 @@ export const WATER_Y = -1.2;
 
 export function createWater() {
   const material = new THREE.ShaderMaterial({
+    uniforms: { travelled: { value: 0 } },
     vertexShader: /* glsl */ `
       varying vec3 vWorld;
       void main() {
@@ -20,6 +22,7 @@ export function createWater() {
       }
     `,
     fragmentShader: /* glsl */ `
+      uniform float travelled;
       varying vec3 vWorld;
       ${COMMON_GLSL}
       ${rampGLSL('waterRamp', PALETTE.water)}
@@ -28,7 +31,7 @@ export function createWater() {
         float dist = length(rel);
         float dep = degrees(atan(cameraPosition.y - vWorld.y, dist));
         // Flat, horizontal paint bands that stretch with distance.
-        float band = fbm(vec2(vWorld.x * 0.004, vWorld.z * 0.05)) - 0.5;
+        float band = fbm(vec2((vWorld.x + travelled) * 0.004, vWorld.z * 0.05)) - 0.5;
         vec3 c = waterRamp(max(dep * (1.0 + band * 0.25), 0.0));
         gl_FragColor = vec4(srgbToLinear(dither(c, gl_FragCoord.xy)), 1.0);
         #include <colorspace_fragment>

@@ -223,9 +223,9 @@ const bakeScene = new THREE.Scene();
 bakeScene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), bakeMaterial));
 const bakeCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
 
-function bakeCloud(renderer, { seed, kind, sunLocal }) {
+function bakeCloud(renderer, { seed, kind, sunLocal, res = 1 }) {
   const k = KINDS[kind];
-  const [w, h] = k.size;
+  const [w, h] = k.size.map((n) => Math.round(n * res));
   const rng = mulberry32(seed);
   const puffs = layoutPuffs(rng, k);
   const { baseY, topY } = fitPuffs(puffs, w, h);
@@ -272,6 +272,7 @@ function cloudMaterial(texture, haze) {
       map: { value: texture },
       hazeColor: { value: new THREE.Color(PALETTE.sky[1][1]) },
       haze: { value: haze },
+      opacity: { value: 1 },
     },
     vertexShader: /* glsl */ `
       varying vec2 vUv;
@@ -283,14 +284,14 @@ function cloudMaterial(texture, haze) {
     fragmentShader: /* glsl */ `
       uniform sampler2D map;
       uniform vec3 hazeColor;
-      uniform float haze;
+      uniform float haze, opacity;
       varying vec2 vUv;
       void main() {
         vec4 t = texture2D(map, vUv);
-        if (t.a < 0.004) discard;
+        if (t.a * opacity < 0.004) discard;
         // Aerial perspective: distant clouds and cloud bases sink into the haze.
         vec3 c = mix(t.rgb, hazeColor, haze * (1.0 - 0.5 * vUv.y));
-        gl_FragColor = vec4(c, t.a);
+        gl_FragColor = vec4(c, t.a * opacity);
         #include <colorspace_fragment>
       }
     `,
@@ -303,73 +304,125 @@ const direction = (az, el) => new THREE.Vector3(
   -Math.cos(az * DEG) * Math.cos(el * DEG),
 );
 
-/** One cloud: azimuth/elevation of its base centre (degrees), angular width, distance. */
-function makeCloud(renderer, { az, el, width, kind, dist, seed, haze = 0 }) {
-  const mesh = new THREE.Mesh();
-  const base = direction(az, el).multiplyScalar(dist);
-  mesh.position.copy(base);
-  mesh.lookAt(0, 0, 0); // face the viewer squarely so high clouds don't skew
-  mesh.updateMatrixWorld();
+// Where the panels face: the seated passenger's eye. At cloud distances the
+// difference between the eyes or a leaning head doesn't matter.
+const VIEWPOINT = new THREE.Vector3(0, 1.2, 0);
 
+/**
+ * One cloud panel at a fixed spot in the world: `home` is the centre of its
+ * flat base (metres), `width` its width in metres.
+ */
+function makeCloud(renderer, { home, width, kind, seed, haze = 0, res = 1 }) {
   // Light the way a background painter does rather than physically: the sun
   // always rakes across the cloud from the side it is really on, slightly
   // above and in front, so every cloud shows a sunlit side and a shadow side.
   // (Physically, clouds toward the sun would be backlit and nearly black.)
-  const physical = direction(SUN.azimuth, SUN.elevation).applyQuaternion(mesh.quaternion.clone().invert());
+  const facing = new THREE.Object3D();
+  facing.position.copy(home);
+  facing.lookAt(VIEWPOINT);
+  const physical = direction(SUN.azimuth, SUN.elevation).applyQuaternion(facing.quaternion.invert());
   const side = Math.sign(physical.x) || 1;
   const sunLocal = new THREE.Vector3(side * 0.78, 0.55, 0.12).normalize(); // x right, y up, z toward the viewer
 
-  const { texture, baseFrac, aspect } = bakeCloud(renderer, { seed, kind, sunLocal });
-  const w = 2 * dist * Math.tan((width * DEG) / 2);
-  const h = w * aspect;
-  mesh.geometry = new THREE.PlaneGeometry(w, h);
-  mesh.material = cloudMaterial(texture, haze);
-  mesh.translateY(h * (0.5 - baseFrac));
+  const { texture, baseFrac, aspect } = bakeCloud(renderer, { seed, kind, sunLocal, res });
+  const h = width * aspect;
+  const mesh = new THREE.Mesh(new THREE.PlaneGeometry(width, h), cloudMaterial(texture, haze));
   mesh.name = `cloud-${kind}`;
+  mesh.userData = { home, lift: h * (0.5 - baseFrac) };
   return mesh;
 }
 
+/** Spot `dist` metres away at azimuth/elevation (degrees) seen from the passenger. */
+const at = (az, el, dist) => direction(az, el).multiplyScalar(dist).add(VIEWPOINT);
+/** Width in metres that spans `deg` degrees at `dist` metres. */
+const span = (deg, dist) => 2 * dist * Math.tan((deg * DEG) / 2);
+
+/**
+ * Multiplane sky. Each layer is a strip of painted panels along the track (x),
+ * `length` metres long, that wraps around as the train moves, so the nearer
+ * layers slide past faster than the far ones. Panels fade out near the ends of
+ * their strip, far ahead or behind, before they wrap.
+ */
 export function createClouds(renderer, seed = 7) {
   const group = new THREE.Group();
   group.name = 'clouds';
   const rng = mulberry32(seed);
   let s = seed * 1000;
+  const layers = [];
+  const layer = (name, length) => {
+    const l = { name, length, clouds: [] };
+    layers.push(l);
+    return l;
+  };
+  const add = (l, spec) => {
+    const mesh = makeCloud(renderer, { ...spec, seed: s++ });
+    l.clouds.push(mesh);
+    group.add(mesh);
+  };
 
-  // Big set pieces, placed by hand for a good composition out of the window.
-  const heroes = [
-    { az: -28, el: 3.0, width: 40, kind: 'tower', dist: 2200 },
-    { az: 32, el: 5.0, width: 30, kind: 'hero', dist: 2000 },
-    { az: 78, el: 4.0, width: 34, kind: 'tower', dist: 2100 },
-    { az: -85, el: 7.0, width: 28, kind: 'hero', dist: 1900 },
-    { az: 135, el: 3.5, width: 36, kind: 'tower', dist: 2300 },
-    { az: -140, el: 9.0, width: 26, kind: 'hero', dist: 1900 },
-    { az: 180, el: 14.0, width: 22, kind: 'hero', dist: 1800 },
-  ];
-  for (const c of heroes) group.add(makeCloud(renderer, { ...c, seed: s++ }));
-
-  // Small fair-weather clouds higher up.
-  for (let i = 0; i < 14; i++) {
-    group.add(makeCloud(renderer, {
-      az: -180 + (i + rng() * 0.8) * (360 / 14),
-      el: 22 + rng() * 30,
-      width: 7 + rng() * 9,
-      kind: 'small',
-      dist: 1600 + rng() * 400,
-      seed: s++,
-    }));
+  // Far: the hazy bank along the horizon and distant towers. Barely moves.
+  const far = layer('far', 12000);
+  for (let i = 0; i < 12; i++) {
+    const dist = 3000;
+    add(far, { home: at(i * 30 + rng() * 10, 0.2, dist), width: span(40 + rng() * 10, dist), kind: 'bank', haze: 0.55, res: 0.7 });
+  }
+  for (const az of [-60, 20, 110, -150]) {
+    const dist = 2800;
+    add(far, { home: at(az + rng() * 20, 1.5, dist), width: span(26 + rng() * 10, dist), kind: 'tower', haze: 0.35, res: 0.6 });
   }
 
-  // A low bank of cloud right along the horizon, all the way round.
-  for (let i = 0; i < 9; i++) {
-    group.add(makeCloud(renderer, {
-      az: i * 40 + rng() * 14,
-      el: 0.2,
-      width: 46 + rng() * 10,
-      kind: 'bank',
-      dist: 2800,
-      seed: s++,
-      haze: 0.5,
-    }));
+  // Mid: the big set pieces, placed by hand for the view out of the window.
+  const mid = layer('mid', 9000);
+  for (const c of [
+    { az: -28, el: 3.0, deg: 40, kind: 'tower', dist: 1900 },
+    { az: 32, el: 5.0, deg: 30, kind: 'hero', dist: 1700 },
+    { az: 78, el: 4.0, deg: 34, kind: 'tower', dist: 1800 },
+    { az: -85, el: 7.0, deg: 28, kind: 'hero', dist: 1600 },
+    { az: 135, el: 3.5, deg: 36, kind: 'tower', dist: 1900 },
+    { az: -140, el: 9.0, deg: 26, kind: 'hero', dist: 1600 },
+    { az: 180, el: 12.0, deg: 22, kind: 'hero', dist: 1500 },
+  ]) {
+    add(mid, { home: at(c.az, c.el, c.dist), width: span(c.deg, c.dist), kind: c.kind, haze: 0.12, res: 0.85 });
   }
-  return group;
+
+  // Near: big, crisp clouds that drift past noticeably.
+  const near = layer('near', 8000);
+  for (let i = 0; i < 8; i++) {
+    const x = -4000 + (i + 0.2 + rng() * 0.6) * 1000;
+    const z = (i % 2 ? 1 : -1) * (550 + rng() * 350);
+    const dist = Math.hypot(x, z);
+    const y = VIEWPOINT.y + dist * Math.tan((5 + rng() * 5) * DEG);
+    add(near, { home: new THREE.Vector3(x, y, z), width: 280 + rng() * 220, kind: rng() < 0.5 ? 'tower' : 'hero' });
+  }
+
+  // Overhead: small fair-weather clouds above the train. Fastest of all.
+  const high = layer('high', 6000);
+  for (let i = 0; i < 24; i++) {
+    const big = i % 4 === 0;
+    const alt = big ? 750 + rng() * 250 : 450 + rng() * 300;
+    const x = -3000 + (i + rng()) * (6000 / 24);
+    const z = (rng() < 0.5 ? 1 : -1) * (alt * 0.5 + rng() * 1300);
+    add(high, big
+      ? { home: new THREE.Vector3(x, alt, z), width: 380 + rng() * 220, kind: 'hero', res: 0.8 }
+      : { home: new THREE.Vector3(x, alt, z), width: 150 + rng() * 170, kind: 'small' });
+  }
+
+  const pos = new THREE.Vector3();
+  /** Slide every layer to where it is when the train has travelled `travelled` metres along +x. */
+  function update(travelled) {
+    for (const l of layers) {
+      const half = l.length / 2;
+      for (const mesh of l.clouds) {
+        const { home, lift } = mesh.userData;
+        const x = THREE.MathUtils.euclideanModulo(home.x - travelled + half, l.length) - half;
+        pos.set(x, home.y, home.z);
+        mesh.position.copy(pos);
+        mesh.lookAt(VIEWPOINT); // face the passenger squarely so high clouds don't skew
+        mesh.translateY(lift);
+        mesh.material.uniforms.opacity.value = 1 - THREE.MathUtils.smoothstep(Math.abs(x), half * 0.7, half);
+      }
+    }
+  }
+  update(0);
+  return { group, update };
 }

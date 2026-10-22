@@ -4,6 +4,8 @@
  *
  *   npm run shot                       -> docs/screenshots/*.png
  *   npm run shot -- --palette=summer --out=some/dir
+ *   npm run shot -- --frames=40 --travel=600   -> numbered frames looking ahead
+ *                                                 while the train travels 600 m
  */
 import http from 'node:http';
 import fs from 'node:fs';
@@ -45,7 +47,13 @@ await page.waitForFunction(() => window.__ready, null, { timeout: 60000 });
 await page.addStyleTag({ content: '#hud { display: none !important; }' });
 
 fs.mkdirSync(OUT, { recursive: true });
-for (const [name, yaw, pitch] of VIEWS) {
+const frames = Number(args.frames || 0);
+for (let i = 0; i < frames; i++) {
+  const travelled = (Number(args.travel || 600) * i) / frames;
+  await page.evaluate(([y, p, t]) => window.__view(y, p, t), [Number(args.yaw || 0), Number(args.pitch || 6), travelled]);
+  await page.screenshot({ path: path.join(OUT, `frame-${String(i).padStart(3, '0')}.png`) });
+}
+for (const [name, yaw, pitch] of frames ? [] : VIEWS) {
   await page.evaluate(([y, p]) => window.__view(y, p), [yaw, pitch]);
   const file = path.join(OUT, `${PALETTE || 'seaTrain'}-${name}.png`);
   await page.screenshot({ path: file });

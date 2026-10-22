@@ -15,6 +15,7 @@ npm install
 npm start          # http://localhost:8080 on desktop (drag to look around)
                    # https://<LAN-ip>:8443 on a Quest (accept the certificate warning once)
 npm run shot       # screenshots from six directions -> docs/screenshots/
+npm run shot -- --frames=48 --travel=900   # frames of the ride, for checking parallax
 ```
 
 Add `?palette=summer` or `?palette=castle` to the URL to try another palette.
@@ -38,9 +39,9 @@ Each module is a working build you can open in the headset before the next one i
 |---|--------|--------|
 | 0 | Groundwork: Three.js + WebXR, dev server, Pages deploy | done |
 | 1 | Palette sampled from reference stills, with switchable presets | done |
-| 2 | Sky: painted gradient dome and procedurally painted cumulus clouds | first pass |
+| 2 | Sky: painted gradient dome; cumulus painted on the GPU as lit volumes, arranged in four parallax layers (far, mid, near, overhead) | in progress |
 | 3 | Water: sun glitter painted as dabs, ripples, cloud reflections | placeholder only |
-| 4 | Motion: the world slides past at a gentle train speed | |
+| 4 | Motion: the world slides past at a gentle train speed (`?speed=<m/s>`, default 14) | first pass |
 | 5 | Distant scenery: island with houses, poles, far shoreline in haze | |
 | 6 | Train car: red seats, wood window frames, hand rings, sway | |
 | 7 | Painterly finish: soft edges, paper grain, color grading | |

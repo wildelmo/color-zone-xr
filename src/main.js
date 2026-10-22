@@ -4,6 +4,7 @@ import { createClouds } from './clouds.js';
 import { createWater } from './water.js';
 import { PALETTE, PALETTE_NAME } from './palette.js';
 import { setupVRButton } from './vr-button.js';
+import { createMotion } from './motion.js';
 
 const EYE_HEIGHT = 1.2; // seated, metres above the train floor
 
@@ -21,7 +22,15 @@ const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerH
 camera.position.set(0, EYE_HEIGHT, 0);
 camera.rotation.order = 'YXZ';
 
-scene.add(createSky(), createWater(), createClouds(renderer));
+const water = createWater();
+const clouds = createClouds(renderer);
+scene.add(createSky(), water, clouds.group);
+
+const motion = createMotion();
+function placeWorld(travelled) {
+  clouds.update(travelled);
+  water.material.uniforms.travelled.value = travelled;
+}
 
 // Desktop: drag to look around.
 const look = { yaw: 0, pitch: 4 };
@@ -53,17 +62,22 @@ window.addEventListener('resize', () => {
 
 setupVRButton(renderer);
 
+const clock = new THREE.Clock();
 let frames = 0;
 renderer.setAnimationLoop(() => {
+  placeWorld(motion.step(clock.getDelta()));
   renderer.render(scene, camera);
   if (++frames === 2) window.__ready = true;
 });
 
-// Hook for the screenshot tool: window.__view(yawDeg, pitchDeg).
-window.__view = (yaw, pitch) => {
+// Hooks for the screenshot tool: window.__view(yawDeg, pitchDeg, travelledMetres).
+window.__view = (yaw, pitch, travelled = 0) => {
+  renderer.setAnimationLoop(null);
   look.yaw = yaw;
   look.pitch = pitch;
   applyLook();
+  motion.set(travelled);
+  placeWorld(travelled);
   renderer.render(scene, camera);
 };
 document.getElementById('palette-name').textContent = PALETTE_NAME;
