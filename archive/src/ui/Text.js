@@ -298,6 +298,24 @@ export function drawIcon(ctx, id, cx, cy, s, color = '#ffffff') {
       }
       break;
     }
+    case 'exit': {
+      ctx.lineWidth = s * 0.1;
+      ctx.beginPath();
+      ctx.moveTo(s * 0.05, -s * 0.42);
+      ctx.lineTo(-s * 0.4, -s * 0.42);
+      ctx.lineTo(-s * 0.4, s * 0.42);
+      ctx.lineTo(s * 0.05, s * 0.42);
+      ctx.stroke();
+      ctx.lineWidth = s * 0.14;
+      ctx.beginPath();
+      ctx.moveTo(-s * 0.15, 0);
+      ctx.lineTo(s * 0.45, 0);
+      ctx.moveTo(s * 0.2, -s * 0.24);
+      ctx.lineTo(s * 0.45, 0);
+      ctx.lineTo(s * 0.2, s * 0.24);
+      ctx.stroke();
+      break;
+    }
     case 'check': {
       ctx.lineWidth = s * 0.16;
       ctx.beginPath();

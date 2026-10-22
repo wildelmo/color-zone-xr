@@ -22,9 +22,16 @@ export class SaveGame {
       }
     };
     for (const ev of ['strokeend', 'undo', 'splat', 'milestone']) app.events.on(ev, mark);
+    this.plugins = new Map(); // key -> { serialize(): any, restore(data) }
+    this.markDirty = mark;
     app.events.on('reset', () => {
       if (!this.loading) this.clear();
     });
+  }
+
+  /** let a play system persist its own state under a key (serialize/restore) */
+  register(key, handler) {
+    this.plugins.set(key, handler);
   }
 
   clear() {
@@ -80,7 +87,21 @@ export class SaveGame {
       stickers,
       splats: app.splats.serialize(),
       milestones: Array.from(app.milestones.reached),
+      ext: this._serializePlugins(),
     };
+  }
+
+  _serializePlugins() {
+    const ext = {};
+    for (const [key, h] of this.plugins) {
+      try {
+        const d = h.serialize();
+        if (d !== undefined && d !== null) ext[key] = d;
+      } catch (e) {
+        console.warn('save plugin failed', key, e);
+      }
+    }
+    return ext;
   }
 
   save() {
@@ -129,7 +150,7 @@ export class SaveGame {
           const ci = single ? 0 : i * 3;
           c.setRGB(s.c[ci] / 255, s.c[ci + 1] / 255, s.c[ci + 2] / 255);
           entry.stroke.addPoint(p, s.r[i], c);
-          if (i % 5 === 0 && i < s.n - 2) map.stamp(p.x, p.z, 0.45 + s.r[i] * 6 + paint.sizeT * 0.6, c, 0.5, 0.85);
+          if (i % 5 === 0 && i < s.n - 2) map.stamp(p.x, p.z, 0.8 + s.r[i] * 8 + paint.sizeT * 1.0, c, 0.7, 0.85);
         }
         entry.stroke.ended = true; // caps were saved as points
         paint.endStroke(entry);
@@ -149,6 +170,15 @@ export class SaveGame {
       if (typeof data.brush === 'number') paint.setBrushIndex(data.brush);
       if (typeof data.size === 'number') paint.setSize(data.size);
       app.milestones.restore(data.milestones || []);
+      for (const [key, h] of this.plugins) {
+        if (data.ext && data.ext[key] !== undefined) {
+          try {
+            h.restore(data.ext[key]);
+          } catch (e) {
+            console.warn('restore plugin failed', key, e);
+          }
+        }
+      }
       app.world.worldColor = Math.min(1, Math.pow(map.computeProgress(), 0.6) * 1.05);
       app.world.uniforms.worldColor.value = app.world.worldColor;
     } finally {

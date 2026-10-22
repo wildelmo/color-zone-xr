@@ -16,7 +16,7 @@ const _right = new THREE.Vector3();
 const _target = new THREE.Vector3();
 const _look = new THREE.Vector3();
 
-function dropGeometry() {
+export function dropGeometry() {
   const pts = [];
   const n = 18;
   for (let i = 0; i <= n; i++) {
@@ -94,24 +94,31 @@ export class Buddy {
     this.squash = 0;
     this.idleT = 0;
     this.hintT = 12;
+    this.autoHints = true; // generic idle hints; a guide system sets this false and hints situationally instead
     this.sayQueue = [];
     this.yaw = 0;
     this.lookAtTip = 0;
     this.wave = 0;
     this.mood = 'idle';
     this.moodT = 0;
+    this.goal = null; // { pos, until } — a place Dot flies to for a while (visit)
     this.shadow = new BlobShadow(app, 0.16);
     this.group.add(this.shadow.mesh);
 
     const ev = app.events;
     ev.on('paintstart', () => this.react(0.5));
     ev.on('bubblepop', (e) => {
+      if (!e || !e.byHand) return; // bubbles dying of old age far away are not news
       this.react(0.9);
       this.setMood('happy', 1.2);
       this.spinVel += 14;
       if (e.byHand) this.say(this.app.rng.pick(['Pop!', 'Nice one!', 'Wheee!', 'Got it!']), 1.4);
     });
-    ev.on('splat', () => {
+    ev.on('splat', (e) => {
+      if (e && e.ball && e.ball.rider) {
+        this.react(0.3); // a rider landing is fun but not news every time
+        return;
+      }
       this.react(1);
       this.spinVel += 10;
       this.say(this.app.rng.pick(['Splat!', 'Whoa!', 'So messy!', 'Love it!']), 1.6);
@@ -145,6 +152,21 @@ export class Buddy {
     this.moodT = duration;
   }
 
+  /** fly to a spot in the world for a few seconds (leading the player, showing something) */
+  visit(pos, seconds = 8) {
+    if (!this.goal) this.goal = { pos: new THREE.Vector3(), until: 0 };
+    this.goal.pos.copy(pos);
+    this.goal.until = this.app.time + seconds;
+  }
+
+  stopVisit() {
+    this.goal = null;
+  }
+
+  get visiting() {
+    return !!this.goal && this.app.time < this.goal.until;
+  }
+
   /** pop into view right in front of the player (intro) with a little wave */
   summon() {
     const app = this.app;
@@ -164,6 +186,41 @@ export class Buddy {
     if (app.fx) app.fx.burst(this.pos, this.color, 30, 1.2, 0.04);
   }
 
+  /**
+   * Poked with a wand tip (play/Boops.js): squash, spin, scoot away from the
+   * hand and squeak a word. Three boops within two seconds make Dot dizzy.
+   */
+  boop(hand = null) {
+    const app = this.app;
+    const time = app.time;
+    if (!this._boopT) this._boopT = [-9, -9, -9];
+    const bt = this._boopT;
+    bt[0] = bt[1];
+    bt[1] = bt[2];
+    bt[2] = time;
+    const dizzy = time - bt[0] < 2;
+    this.react(0.6);
+    this.squash = Math.min(1.6, this.squash + 1.2);
+    this.spinVel += dizzy ? 24 : 8;
+    // scoot 0.3 m away from whatever poked it (the damp in update floats it back)
+    _look.copy(this.pos);
+    if (hand && hand.tip) _look.sub(hand.tip);
+    else _look.sub(app.headPosition(_head));
+    _look.y = 0;
+    if (_look.lengthSq() < 1e-4) _look.set(0, 0, -1);
+    this.pos.addScaledVector(_look.normalize(), 0.3);
+    if (dizzy) {
+      this.wave = 2.2; // the wave code rolls the body back and forth: a dizzy wobble
+      this.setMood('surprised', 2.2);
+      this.say('Whoa... dizzy!', 2);
+    } else {
+      this.setMood('surprised', 0.4);
+      if (app.fx) app.fx.schedule(0.45, () => this.mood !== 'surprised' && this.setMood('happy', 1.4));
+      if (this.sayQueue.length < 2) this.say(app.rng.pick(['Boop!', 'Hehe!', 'That tickles!']), 1.2);
+    }
+    this.boops = (this.boops || 0) + 1;
+  }
+
   update(dt, time) {
     const app = this.app;
     const rng = app.rng;
@@ -178,12 +235,14 @@ export class Buddy {
     // where it likes to hang out: front-left of the player, a little low
     _target.copy(_head).addScaledVector(_fwd, 1.15).addScaledVector(_right, -0.65);
     _target.y = _head.y - 0.2 + Math.sin(time * 1.3) * 0.05;
+    if (this.goal && time < this.goal.until) _target.copy(this.goal.pos);
+    else if (this.goal) this.goal = null;
     // stay above ground
     const gy = app.world.heightAt(_target.x, _target.z);
     if (_target.y < gy + 0.5) _target.y = gy + 0.5;
     // only chase when far away so it doesn't jitter with head motion
     const dist = this.pos.distanceTo(_target);
-    const lam = dist > 1.6 ? 3.2 : dist > 0.6 ? 1.6 : 0.6;
+    const lam = this.goal ? 2.2 : dist > 1.6 ? 3.2 : dist > 0.6 ? 1.6 : 0.6;
     this.pos.x = damp(this.pos.x, _target.x, lam, dt);
     this.pos.y = damp(this.pos.y, _target.y, lam, dt);
     this.pos.z = damp(this.pos.z, _target.z, lam, dt);
@@ -294,7 +353,7 @@ export class Buddy {
     // gentle nudges if the player is idle
     this.idleT += dt;
     this.hintT -= dt;
-    if (this.hintT <= 0 && !painting) {
+    if (this.autoHints && this.hintT <= 0 && !painting) {
       this.hintT = 22 + rng.float() * 10;
       this.react(0.6);
       const p = app.world.progress;

@@ -83,8 +83,8 @@
   const state = {
     head: { pos: [0, 1.6, 0], quat: [0, 0, 0, 1] },
     controllers: {
-      left: { pos: [-0.25, 1.15, -0.35], quat: [0, 0, 0, 1], buttons: [], axes: [0, 0, 0, 0], connected: true, tracking: false, pinch: false },
-      right: { pos: [0.25, 1.15, -0.35], quat: [0, 0, 0, 1], buttons: [], axes: [0, 0, 0, 0], connected: true, tracking: false, pinch: false },
+      left: { pos: [-0.25, 1.15, -0.35], quat: [0, 0, 0, 1], buttons: [], axes: [0, 0, 0, 0], connected: true, tracking: false, pinch: false, fist: false },
+      right: { pos: [0.25, 1.15, -0.35], quat: [0, 0, 0, 1], buttons: [], axes: [0, 0, 0, 0], connected: true, tracking: false, pinch: false, fist: false },
     },
     session: null,
     frames: 0,
@@ -248,6 +248,8 @@
         const k = parts.findIndex((p) => name.endsWith(p)) + 1;
         local = [side * fingerX[finger] || 0, 0, 0.03 - k * 0.028];
         if (finger === 'index' && name.endsWith('tip')) local = c.pinch ? [0.0, 0.0, -0.11] : [side * 0.02, 0, -0.11];
+        // a fist curls middle/ring/pinky back toward the palm
+        if (c.fist && finger !== 'index' && k >= 3) local = [side * fingerX[finger] || 0, -0.02, 0.03 - 0.028 - (k - 2) * 0.004];
       }
       const wp = rotateVec(c.quat, local);
       const p = [c.pos[0] + wp[0], c.pos[1] + wp[1], c.pos[2] + wp[2]];
@@ -306,6 +308,7 @@
     setConnected(hand, on) { state.controllers[hand].connected = !!on; },
     setHandTracking(hand, on, pinch) { const c = state.controllers[hand]; c.tracking = !!on; if (pinch !== undefined) c.pinch = !!pinch; },
     setPinch(hand, pinch) { state.controllers[hand].pinch = !!pinch; },
+    setFist(hand, fist) { state.controllers[hand].fist = !!fist; },
     endSession() { if (state.session) state.session.end(); },
     /** animate a controller over duration ms: fn(t01) -> { pos, quat } ; resolves when done */
     animate(hand, duration, fn) {

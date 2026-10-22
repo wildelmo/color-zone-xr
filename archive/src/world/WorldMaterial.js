@@ -14,8 +14,10 @@ import * as THREE from 'three';
  *
  * Attributes: color, tint (0..1 how much paint hue overrides natural
  * colour), sway (wind). Instanced meshes may add popT (bloom time; <0 always
- * visible). forceColor (uniform) reveals everything — used by the title
- * screen and the opening "colours drain away" moment.
+ * visible) and pokeT (time something poked it: a short jelly wobble; POKE
+ * reads it as an instanced attribute, a `pokeT` uniform object does the same
+ * for a single mesh). forceColor (uniform) reveals everything — used by the
+ * title screen and the opening "colours drain away" moment.
  */
 
 const vertexShader = /* glsl */ `
@@ -26,6 +28,12 @@ attribute vec3 snormal;
 #endif
 #ifdef POP
 attribute float popT;
+#endif
+#ifdef POKE
+attribute float pokeT;
+#endif
+#ifdef POKE_UNIFORM
+uniform float pokeT;
 #endif
 #ifdef CLOUD
 attribute vec4 cloudInfo; // center.x, center.z, speed, unused
@@ -57,6 +65,15 @@ void main() {
     popScale = popT < 0.0 ? 1.0 : elasticOut(clamp((time - popT) / 1.1, 0.0, 1.0));
     popScale = max(popScale, forceColor);
     pos *= popScale;
+  #endif
+  #if defined(POKE) || defined(POKE_UNIFORM)
+    // poked (Boops): a decaying jelly wobble; pokeT far in the past = still
+    float pk = time - pokeT;
+    if (pk >= 0.0 && pk < 3.0) {
+      float w = exp(-pk * 4.0) * sin(pk * 22.0);
+      pos.y *= 1.0 + 0.10 * w;
+      pos.xz *= 1.0 - 0.06 * w;
+    }
   #endif
   vec4 wp = model * vec4(pos, 1.0);
   #ifdef OUTLINE
@@ -211,13 +228,15 @@ void main() {
 export class WorldMaterial extends THREE.ShaderMaterial {
   /**
    * @param {object} shared shared uniform objects owned by World
-   * @param {object} opts { flat, wind, pop, cloud, double, tint, globalColor, emissive, outline, outlineWidth, groundNoise, name }
+   * @param {object} opts { flat, wind, pop, poke, pokeT, cloud, double, tint, globalColor, emissive, outline, outlineWidth, groundNoise, name }
    */
   constructor(shared, opts = {}) {
     const defines = {};
     if (opts.flat) defines.FLAT = 1;
     if (opts.wind) defines.WIND = 1;
     if (opts.pop) defines.POP = 1;
+    if (opts.poke) defines.POKE = 1; // per-instance pokeT attribute
+    if (opts.pokeT) defines.POKE_UNIFORM = 1; // one shared { value } uniform for a single mesh
     if (opts.cloud) defines.CLOUD = 1;
     if (opts.globalColor) defines.GLOBAL_COLOR = 1;
     if (opts.outline) defines.OUTLINE = 1;
@@ -228,6 +247,7 @@ export class WorldMaterial extends THREE.ShaderMaterial {
         tintScale: { value: opts.tint ?? 1 },
         emissive: { value: opts.emissive ?? 0 },
         outlineWidth: { value: opts.outlineWidth ?? 0.02 },
+        ...(opts.pokeT ? { pokeT: opts.pokeT } : {}),
       },
       vertexShader,
       fragmentShader,

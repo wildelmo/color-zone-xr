@@ -98,6 +98,26 @@ export class Splats {
     this.decalData = [];
     this.group.add(this.decals);
     this.splatCount = 0;
+    this.waterHandler = null; // fn(ball) — set by the pond system; called when a ball hits the water
+  }
+
+  /** take a flying ball out of the world without a splat (caught, eaten, ...) */
+  consume(b) {
+    this._removeBall(b);
+    this.app.events.emit('ballconsumed', b);
+  }
+
+  /** put a new flying ball into the world (Dot throwing back, riders flying off a rail, ...) */
+  launch(pos, vel, color, { scale = 1, gravity = 6.5 } = {}) {
+    const b = this._makeBall(color);
+    b.mesh.position.copy(pos);
+    b.mesh.scale.setScalar(scale);
+    b.vel.copy(vel);
+    b.gravity = gravity;
+    b.flying = true;
+    b.age = 0;
+    this.balls.push(b);
+    return b;
   }
 
   _makeBall(color) {
@@ -130,7 +150,8 @@ export class Splats {
     const p = b.mesh.position;
     const world = app.world;
     const speed = b.vel.length();
-    const r = 1.6 + Math.min(2.5, speed * 0.28);
+    let r = 1.6 + Math.min(2.5, speed * 0.28);
+    r *= Math.min(2, 1 + 0.15 * (b.charge || 0)); // charged balls (held long, rallied with Dot) splat bigger
     world.paintMap.stamp(p.x, p.z, r, b.color, 0.9, 0.7);
     if (app.fx) {
       app.fx.splash(p, b.color, 34, 2.4 + speed * 0.2);
@@ -141,7 +162,7 @@ export class Splats {
     this._placeDecal(p.x, p.z, r, b.color, app.rng.float(), app.time);
     if (app.audio) app.audio.splat(speed, p);
     this.splatCount++;
-    app.events.emit('splat', { position: p.clone(), color: b.color.clone(), radius: r });
+    app.events.emit('splat', { position: p.clone(), color: b.color.clone(), radius: r, ball: b });
     // pop bubbles nearby
     if (app.bubbles) {
       for (let k = 0; k < app.bubbles.capacity; k++) {
@@ -210,7 +231,7 @@ export class Splats {
         }
         continue;
       }
-      if (hand.squeezePressed && !held && !hand.uiBlocked && !app.locomotionBusy) {
+      if (hand.squeezePressed && !held && !hand.uiBlocked && !hand.grabBlocked && !app.locomotionBusy) {
         const b = this._makeBall(app.paint.color);
         b.mesh.scale.setScalar(0.01);
         this.held[key] = b;
@@ -221,7 +242,9 @@ export class Splats {
       if (held) {
         held.mesh.position.copy(hand.tip);
         held.shadow.update(held.mesh.position, 0.07, 2.5);
-        held.mesh.scale.setScalar(Math.min(1, held.mesh.scale.x + dt * 6));
+        // hold to charge: the longer you hold it, the bigger it grows (and the bigger it splats)
+        held.charge = Math.min(6, (held.charge || 0) + dt * 4);
+        held.mesh.scale.setScalar(Math.min(1 + 0.1 * held.charge, held.mesh.scale.x + dt * 6));
         held.mesh.quaternion.copy(hand.tipQuat);
         if (hand.squeezeReleased) {
           this.held[key] = null;
@@ -241,7 +264,7 @@ export class Splats {
     for (const b of [...this.balls]) {
       if (!b.flying) continue;
       b.age += dt;
-      b.vel.y -= 6.5 * dt;
+      b.vel.y -= (b.gravity || 6.5) * dt;
       b.vel.multiplyScalar(1 - 0.08 * dt);
       const p = b.mesh.position;
       p.addScaledVector(b.vel, dt);
@@ -251,7 +274,9 @@ export class Splats {
       if (app.fx && app.rng.chance(0.6)) app.fx.sparkle(p, _v.set(0, 0.2, 0), b.color, 0.4, 0.03);
       const gy = world.heightAt(p.x, p.z);
       const onIsland = world.terrain.isOnIsland(p.x, p.z, 0.5);
-      if (p.y <= gy + 0.04 && onIsland) {
+      if (this.waterHandler && b.vel.y < 0 && world.terrain.isWater(p.x, p.z) && p.y <= world.terrain.waterLevel + 0.02) {
+        this.waterHandler(b);
+      } else if (p.y <= gy + 0.04 && onIsland) {
         this.splat(b);
       } else if (b.age > 8 || p.y < -30) {
         this._removeBall(b);

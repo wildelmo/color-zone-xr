@@ -127,6 +127,12 @@ export class DesktopInput {
       if (terrain.isOnIsland(nx, nz, 1.5) && !terrain.isWater(nx, nz)) {
         this.pos.x = nx;
         this.pos.z = nz;
+        // footprints of colour
+        this.stepAcc = (this.stepAcc || 0) + speed;
+        if (this.stepAcc > 1.5) {
+          this.stepAcc = 0;
+          this.app.world.paintMap.stamp(nx, nz, 0.45, this.app.paint.color, 0.5, 0.85);
+        }
       }
     }
     this.pos.y = this.app.world.heightAt(this.pos.x, this.pos.z);

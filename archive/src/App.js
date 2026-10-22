@@ -17,6 +17,7 @@ import { Splats } from './fx/Splats.js';
 import { Audio } from './audio/Audio.js';
 import { Buddy } from './creatures/Buddy.js';
 import { Butterflies } from './creatures/Butterflies.js';
+import { Critters } from './creatures/Critters.js';
 import { Milestones } from './systems/Milestones.js';
 import { Toast } from './ui/Toast.js';
 import { Menu } from './ui/Menu.js';
@@ -26,6 +27,11 @@ import { HandVisual } from './input/HandVisual.js';
 import { Intro } from './systems/Intro.js';
 import { warmMaterials } from './util/Warmup.js';
 import { SaveGame } from './systems/SaveGame.js';
+import { Guide } from './systems/Guide.js';
+import { Pond } from './play/Pond.js';
+import { Riders } from './creatures/Riders.js';
+import { Boops } from './play/Boops.js';
+import { Catch } from './play/Catch.js';
 
 /**
  * Color Zone XR — application root. Owns the renderer, the player rig,
@@ -81,8 +87,10 @@ export class App {
     this.locomotionBusy = false;
     this.spreadEnergy = 0; // recent activity keeps colour spreading
     this.events.on('strokeend', () => this.bumpEnergy(0.3));
-    this.events.on('bubblepop', () => this.bumpEnergy(0.4));
-    this.events.on('splat', () => this.bumpEnergy(0.5));
+    this.events.on('bubblepop', (e) => {
+      if (e && e.byHand) this.bumpEnergy(0.4); // only the player's own pops keep the magic going
+    });
+    this.events.on('splat', (e) => this.bumpEnergy(e && e.ball && e.ball.rider ? 0.2 : 0.5));
 
     this.paint = new Paint(this);
     this.scene.add(this.paint.group);
@@ -113,6 +121,20 @@ export class App {
     this.handVisual = this.addSystem(new HandVisual(this));
     this.scene.add(this.handVisual.group);
     this.hintPulse = false;
+    this.saveGame = this.addSystem(new SaveGame(this)); // constructed before the play layer so systems can register save plugins; load() runs last
+    // ---- play layer: the things to do (each is a self-contained system) ----
+    // (systems register themselves here; order = update order)
+    this.catch = this.addSystemBefore(new Catch(this), this.splats); // before Splats: a catch consumes the squeeze before it would conjure
+    this.critters = this.addSystem(new Critters(this)); // the sleepyheads: sketch animals you wake with colour
+    this.scene.add(this.critters.group);
+    this.boops = this.addSystem(new Boops(this)); // poke anything with the wand; paint balls hit things
+    this.pond = this.addSystem(new Pond(this)); // the living pond: feed the fountain, koi, bubbles near you
+    this.scene.add(this.pond.group);
+    this.riders = this.addSystem(new Riders(this)); // little paint drops ride your long strokes
+    this.scene.add(this.riders.group);
+    this.guide = this.addSystem(new Guide(this)); // Dot leads you to the next thing (keep last: it looks at the other play systems)
+    this.scene.add(this.guide.group);
+    // ---- end play layer ----
     this.intro = this.addSystem(new Intro(this));
     // compile every on-demand shader during the loading frames (no first-use hitches)
     warmMaterials(this.scene, [
@@ -129,7 +151,6 @@ export class App {
     this.events.on('modechange', (mode) => {
       if (mode === 'xr' || mode === 'desktop') this.audio.startFountain(this.world.fountain.top);
     });
-    this.saveGame = this.addSystem(new SaveGame(this));
     if (!params.has('fresh')) {
       try {
         this.restored = this.saveGame.load();
@@ -167,6 +188,14 @@ export class App {
     return sys;
   }
 
+  /** insert a system so it updates before another one (e.g. catch before splats) */
+  addSystemBefore(sys, before) {
+    const i = this.systems.indexOf(before);
+    if (i < 0) this.systems.push(sys);
+    else this.systems.splice(i, 0, sys);
+    return sys;
+  }
+
   onHandConnected(hs) {
     this.events.emit('handconnected', hs);
   }
@@ -186,7 +215,32 @@ export class App {
   stopDesktop() {
     this.desktop.disable();
     this.mode = 'attract';
+    if (this.audio) this.audio.pause();
     this.events.emit('modechange', this.mode);
+  }
+
+  /**
+   * A true exit: save, leave VR, silence the audio for good and stop the
+   * frame loop, so the page is inert afterwards (main.js shows a goodbye).
+   */
+  async exitVR() {
+    if (this.exited) return;
+    this.exited = true;
+    for (const b of this.brushes) b.cancel();
+    if (this.saveGame && this.saveGame.dirty) this.saveGame.save();
+    if (this.audio) this.audio.shutdown();
+    const session = this.session;
+    if (session) {
+      try {
+        await session.end();
+      } catch (e) {
+        /* already ending */
+      }
+    } else if (this.mode === 'desktop') {
+      this.stopDesktop();
+    }
+    this.renderer.setAnimationLoop(null);
+    this.events.emit('exit');
   }
 
   async isVRSupported() {
@@ -236,6 +290,7 @@ export class App {
     this.camera.position.set(0, WORLD.eyeHeight, 0);
     this.camera.rotation.set(0, 0, 0);
     this.onResize();
+    if (this.audio && !this.exited) this.audio.pause(); // headset off / system exit: go quiet until the next session
     this.events.emit('modechange', this.mode);
     this.events.emit('sessionend');
   }
@@ -331,6 +386,8 @@ export class App {
 
     this.hands.left.uiBlocked = false;
     this.hands.right.uiBlocked = false;
+    this.hands.left.grabBlocked = false;
+    this.hands.right.grabBlocked = false;
     this.palette.update(dt, this.time);
     this.locomotion.update(dt);
     for (const s of this.systems) s.update(dt, this.time);

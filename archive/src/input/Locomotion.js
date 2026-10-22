@@ -17,6 +17,7 @@ const _n = new THREE.Vector3();
 const _up = new THREE.Vector3(0, 1, 0);
 const _q = new THREE.Quaternion();
 const _c = new THREE.Color();
+const _land = new THREE.Vector3();
 const GOOD = new THREE.Color('#5cf2c2');
 const BAD = new THREE.Color('#ff5c7a');
 
@@ -97,6 +98,20 @@ export class Locomotion {
     this.fade.visible = true;
     this.teleports++;
     if (app.audio) app.audio.teleport();
+    // you bring colour with you: a splash of paint where you land
+    if (app.paint && app.world.terrain.isOnIsland(x, z, 1)) {
+      const c = app.paint.color;
+      app.world.paintMap.stamp(x, z, 1.1, c, 0.6, 0.8);
+      if (app.fx) {
+        _land.set(x, rig.position.y + 0.06, z);
+        app.fx.burst(_land, c, 16, 1.1, 0.035);
+        for (let k = 0; k < 5; k++) {
+          _land.set(x + app.rng.gauss() * 0.6, rig.position.y + 0.5 + app.rng.float() * 0.4, z + app.rng.gauss() * 0.6);
+          app.fx.drip(_land, c, 0.7);
+        }
+      }
+      app.bumpEnergy(0.2);
+    }
     app.events.emit('teleport', { x, z });
   }
 

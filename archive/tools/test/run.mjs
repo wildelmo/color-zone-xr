@@ -8,7 +8,7 @@
  */
 import path from 'node:path';
 import fs from 'node:fs';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { loadPlaywright, launchArgs } from './pw.mjs';
 import { serve } from './server.mjs';
 
@@ -357,6 +357,22 @@ console.log('\n▶ Menu');
   });
 }
 
+// feature scenarios: tools/test/scenarios/*.mjs export `run({ page, check, state, EYE, OUT, QUICK })`
+{
+  const dir = path.join(ROOT, 'tools', 'test', 'scenarios');
+  const files = fs.existsSync(dir) ? fs.readdirSync(dir).filter((f) => f.endsWith('.mjs')).sort() : [];
+  for (const f of files) {
+    const mod = await import(pathToFileURL(path.join(dir, f)).href);
+    if (typeof mod.run !== 'function') continue;
+    console.log(`\n▶ ${mod.title || f}`);
+    try {
+      await mod.run({ page, check, state, EYE, OUT, QUICK, ROOT });
+    } catch (err) {
+      check(false, `scenario ${f} threw: ${err && err.message ? err.message : err}`);
+    }
+  }
+}
+
 if (!QUICK) {
   console.log('\n▶ Colouring the world (milestones)');
   // paint big splashes all over the island to drive progress
@@ -468,11 +484,11 @@ if (!QUICK) {
   check(restored.restored && restored.strokes === saved.strokes, `restored ${restored.strokes} stroke(s) on reload`);
   check(restored.seed === saved.seed, `same island restored (${restored.seed})`);
   check(restored.color === 4, 'colour choice restored');
-  check(restored.progress > 0.002, `ground colour rebuilt (${(restored.progress * 100).toFixed(1)}%)`);
   await page.goto(url + '?fresh', { waitUntil: 'load' });
   await page.waitForFunction(() => window.__czx && window.__czx.frame > 5, null, { timeout: 60000 });
-  const fresh = await page.evaluate(() => window.__czx.paint.history.length);
-  check(fresh === 0, '?fresh starts clean');
+  const fresh = await page.evaluate(() => ({ strokes: window.__czx.paint.history.length, progress: window.__czx.world.progress }));
+  check(fresh.strokes === 0, '?fresh starts clean');
+  check(restored.progress > fresh.progress + 0.0002, `ground colour rebuilt from the save (${(restored.progress * 100).toFixed(2)}% vs ${(fresh.progress * 100).toFixed(2)}% fresh)`);
   await page.goto(url, { waitUntil: 'load' });
   await page.waitForFunction(() => window.__czx && window.__czx.frame > 5, null, { timeout: 60000 });
   await page.waitForFunction(() => !document.getElementById('btn-vr').disabled, null, { timeout: 10000 });
@@ -487,10 +503,28 @@ check(errors.length === 0, errors.length ? 'page errors: ' + errors.join(' | ') 
 check(consoleErrors.length === 0, consoleErrors.length ? 'console errors: ' + consoleErrors.slice(0, 3).join(' | ') : 'no console errors');
 console.log(`  · draw calls ${s.drawCalls}, triangles ${s.triangles}`);
 
-await page.evaluate(() => window.__xrEmu.endSession());
-await page.waitForTimeout(400);
-s = await state(page);
-check(!s.presenting && s.mode === 'attract', 'session ended cleanly');
+console.log('\n▶ Exit');
+{
+  // the menu's Exit button (confirm, then go) ends the session, silences the audio and stops the loop
+  await page.evaluate(async () => {
+    const a = window.__czx;
+    const b = a.menu.buttons.find((x) => x.id === 'exit');
+    a.menu.activate(b); // arms the confirmation
+    a.menu.activate(b); // confirmed
+    await new Promise((r) => setTimeout(r, 600));
+  });
+  s = await state(page);
+  check(!s.presenting && s.mode === 'attract', 'Exit ended the session cleanly');
+  const after = await page.evaluate(async () => {
+    const a = window.__czx;
+    const f0 = a.frame;
+    await new Promise((r) => setTimeout(r, 500));
+    return { exited: a.exited, framesAdvanced: a.frame - f0, audioState: a.audio.ctx ? a.audio.ctx.state : 'none', audioReady: a.audio.ready, goodbye: !document.getElementById('goodbye').classList.contains('hidden') && document.getElementById('overlay').classList.contains('bye') };
+  });
+  check(after.exited && after.framesAdvanced === 0, `the frame loop stopped (${after.framesAdvanced} frames in 0.5 s)`);
+  check(after.audioState === 'closed' && !after.audioReady, `audio shut down (context ${after.audioState})`);
+  check(after.goodbye, 'the goodbye screen is showing');
+}
 
 await browser.close();
 server.close();
