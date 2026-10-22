@@ -98,6 +98,9 @@ $('palette-name').textContent = PALETTE_NAME;
 
 app.start();
 
+// The previous app at this address installed a service worker; make sure it is gone.
+navigator.serviceWorker?.getRegistrations().then((list) => list.forEach((r) => r.unregister())).catch(() => {});
+
 // Hooks for tests and the screenshot tool.
 window.__app = app;
 window.__frames = () => frames;
