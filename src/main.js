@@ -21,7 +21,7 @@ const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerH
 camera.position.set(0, EYE_HEIGHT, 0);
 camera.rotation.order = 'YXZ';
 
-scene.add(createSky(), createWater(), createClouds());
+scene.add(createSky(), createWater(), createClouds(renderer));
 
 // Desktop: drag to look around.
 const look = { yaw: 0, pitch: 4 };
