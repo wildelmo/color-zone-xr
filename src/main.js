@@ -15,6 +15,12 @@ renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.xr.enabled = true;
 renderer.xr.setReferenceSpaceType('local-floor');
+// three.js defaults to maximum foveated rendering at the browser's reduced
+// resolution, which turns smooth skies and soft clouds blocky outside the
+// centre of view. This scene is cheap, so render it everywhere at full
+// detail, a little above the headset's recommended resolution.
+renderer.xr.setFoveation(0);
+renderer.xr.setFramebufferScaleFactor(1.25);
 document.body.appendChild(renderer.domElement);
 
 const scene = new THREE.Scene();
