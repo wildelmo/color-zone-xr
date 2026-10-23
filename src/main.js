@@ -7,6 +7,7 @@ import { vrSupported, enterVR } from './vr-button.js';
 import { createMotion } from './motion.js';
 import { createLifecycle } from './lifecycle.js';
 import { createExitGesture } from './exit-gesture.js';
+import { loadCloudArt } from './cloud-art.js';
 
 const EYE_HEIGHT = 1.2; // seated, metres above the train floor
 
@@ -31,7 +32,7 @@ camera.position.set(0, EYE_HEIGHT, 0);
 camera.rotation.order = 'YXZ';
 
 const water = createWater();
-const clouds = createClouds(renderer);
+const clouds = createClouds(renderer, await loadCloudArt(renderer));
 scene.add(createSky(), water, clouds.group);
 
 const motion = createMotion();

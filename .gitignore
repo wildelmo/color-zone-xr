@@ -4,3 +4,4 @@ node_modules/
 test-results/
 # Reference stills are copyrighted; keep them local.
 reference/
+__pycache__/

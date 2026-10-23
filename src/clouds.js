@@ -19,6 +19,7 @@
 import * as THREE from 'three';
 import { PALETTE } from './palette.js';
 import { COMMON_GLSL, rampGLSL } from './shaderlib.js';
+import { pickArt } from './cloud-art.js';
 
 const DEG = Math.PI / 180;
 const MAX_PUFFS = 160;
@@ -264,7 +265,7 @@ function bakeCloud(renderer, { seed, kind, sunLocal, res = 1 }) {
   return { target, baseFrac: baseY / h, aspect: h / w };
 }
 
-function cloudMaterial(texture, haze) {
+function cloudMaterial(texture, haze, mirror = false) {
   return new THREE.ShaderMaterial({
     transparent: true,
     depthWrite: false,
@@ -273,11 +274,13 @@ function cloudMaterial(texture, haze) {
       hazeColor: { value: new THREE.Color(PALETTE.sky[1][1]) },
       haze: { value: haze },
       opacity: { value: 1 },
+      mirror: { value: mirror ? 1 : 0 },
     },
     vertexShader: /* glsl */ `
+      uniform float mirror;
       varying vec2 vUv;
       void main() {
-        vUv = uv;
+        vUv = vec2(mix(uv.x, 1.0 - uv.x, mirror), uv.y);
         gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
       }
     `,
@@ -312,7 +315,7 @@ const VIEWPOINT = new THREE.Vector3(0, 1.2, 0);
  * One cloud panel at a fixed spot in the world: `home` is the centre of its
  * flat base (metres), `width` its width in metres.
  */
-function makeCloud(renderer, { home, width, kind, seed, haze = 0, res = 1, targets }) {
+function makeCloud(renderer, { home, width, kind, seed, haze = 0, res = 1, targets, art }) {
   // Light the way a background painter does rather than physically: the sun
   // always rakes across the cloud from the side it is really on, slightly
   // above and in front, so every cloud shows a sunlit side and a shadow side.
@@ -324,10 +327,20 @@ function makeCloud(renderer, { home, width, kind, seed, haze = 0, res = 1, targe
   const side = Math.sign(physical.x) || 1;
   const sunLocal = new THREE.Vector3(side * 0.78, 0.55, 0.12).normalize(); // x right, y up, z toward the viewer
 
-  const { target, baseFrac, aspect } = bakeCloud(renderer, { seed, kind, sunLocal, res });
-  targets.push(target);
+  let texture, baseFrac, aspect, mirror = false;
+  if (art) {
+    // A painting: mirror it if its sunlit side is on the wrong side here.
+    ({ texture, aspect } = art);
+    baseFrac = 0.02; // prep_clouds.py trims to a 2% margin
+    mirror = art.light !== side;
+  } else {
+    const baked = bakeCloud(renderer, { seed, kind, sunLocal, res });
+    targets.push(baked.target);
+    ({ baseFrac, aspect } = baked);
+    texture = baked.target.texture;
+  }
   const h = width * aspect;
-  const mesh = new THREE.Mesh(new THREE.PlaneGeometry(width, h), cloudMaterial(target.texture, haze));
+  const mesh = new THREE.Mesh(new THREE.PlaneGeometry(width, h), cloudMaterial(texture, haze, mirror));
   mesh.name = `cloud-${kind}`;
   mesh.userData = { home, lift: h * (0.5 - baseFrac) };
   return mesh;
@@ -344,7 +357,7 @@ const span = (deg, dist) => 2 * dist * Math.tan((deg * DEG) / 2);
  * layers slide past faster than the far ones. Panels fade out near the ends of
  * their strip, far ahead or behind, before they wrap.
  */
-export function createClouds(renderer, seed = 7) {
+export function createClouds(renderer, art = null, seed = 7) {
   const group = new THREE.Group();
   group.name = 'clouds';
   const rng = mulberry32(seed);
@@ -356,8 +369,10 @@ export function createClouds(renderer, seed = 7) {
     layers.push(l);
     return l;
   };
+  const used = { tower: 0, hero: 0, bank: 0, small: 0 };
   const add = (l, spec) => {
-    const mesh = makeCloud(renderer, { ...spec, seed: s++, targets });
+    const painting = art && pickArt(art, spec.kind, used[spec.kind]++);
+    const mesh = makeCloud(renderer, { ...spec, seed: s++, targets, art: painting });
     l.clouds.push(mesh);
     group.add(mesh);
   };
