@@ -8,6 +8,7 @@ import { G } from './dimensions.js';
 import { T } from './terrain.js';
 import { buildTown, townUniforms, townMaterial } from './town.js';
 import { buildSmoke } from './smoke.js';
+import { groundMaterial } from './ground.js';
 import { buildTownfolk } from './townfolk.js';
 import { buildDragons } from './dragons.js';
 import { buildGlass } from './glass.js';
@@ -64,7 +65,7 @@ export async function createGlobe(ctx, { lod = 'hero' } = {}) {
     modelDetails(ROCK),
   ]);
   await ctx.step();
-  const rockMat = townMaterial(kit, { vertexColors: true, roughness: 0.85 }, U, { build: false, snow: true });
+  const rockMat = groundMaterial(kit, U);
   const floorMat = kit.standard({ vertexColors: true, roughness: 0.9 });
   const baseMat = kit.standard({ vertexColors: true, roughness: 0.32, metalness: 0.25, envMapIntensity: 1.8 });
   const base = new THREE.Mesh(baseGeo, baseMat);
@@ -309,7 +310,7 @@ export async function createGlobe(ctx, { lod = 'hero' } = {}) {
     interactions,
     timeline,
     stats: { houses: town.houses },
-    debug: { dragons: dragons.dragons, perches, snow, simulateDragons: dragons.simulate, heightAt },
+    debug: { dragons: dragons.dragons, perches, snow, simulateDragons: dragons.simulate, heightAt, houses: town.houseList, island },
     update,
     assemble() {
       timeline.play();

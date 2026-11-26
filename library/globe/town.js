@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { GeoBag, lathe, mat } from '../core/geometry.js';
 import { mulberry32 } from '../core/random.js';
 import { T, STREETS, edgeR, topHeight, angDist, terraceOf } from './terrain.js';
-import { facadeAtlas, tileUV, roofTiles, stoneBlocks, roseWindow } from './townTextures.js';
+import { facadeAtlas, tileUV, roofTiles, stoneBlocks, woodGrain, roseWindow } from './townTextures.js';
 import { makeDetailer, houseLook } from './details.js';
 
 /**
@@ -73,20 +73,38 @@ export async function buildTown(kit, uniforms, { lod = 'hero', seed = 11, step =
   const atlas = facadeAtlas();
   kit.trackTexture(atlas.map);
   kit.trackTexture(atlas.emissive);
-  const roofTex = kit.trackTexture(roofTiles());
-  const stoneTex = kit.trackTexture(stoneBlocks());
+  // (made a piece at a time on first use, then remembered)
+  const roofTex = roofTiles();
+  if (step) await step();
+  const stoneTex = stoneBlocks();
+  if (step) await step();
+  const woodTex = woodGrain();
+  if (step) await step();
+  for (const t of [roofTex, stoneTex, woodTex]) {
+    kit.trackTexture(t.map);
+    kit.trackTexture(t.normal);
+  }
   const rose = kit.trackTexture(roseWindow());
   const mats = {
     walls: townMaterial(kit, { map: atlas.map, emissiveMap: atlas.emissive, emissive: 0xffffff, emissiveIntensity: 1.4, roughness: 0.8 }, uniforms),
-    roof: townMaterial(kit, { map: roofTex, vertexColors: true, roughness: 0.7 }, uniforms),
-    stone: townMaterial(kit, { map: stoneTex, vertexColors: true, roughness: 0.85 }, uniforms),
-    wood: townMaterial(kit, { vertexColors: true, roughness: 0.7 }, uniforms),
+    roof: townMaterial(kit, { map: roofTex.map, normalMap: roofTex.normal, normalScale: new THREE.Vector2(1, 1), vertexColors: true, roughness: 0.65 }, uniforms),
+    stone: townMaterial(kit, { map: stoneTex.map, normalMap: stoneTex.normal, normalScale: new THREE.Vector2(1.2, 1.2), vertexColors: true, roughness: 0.85 }, uniforms),
+    wood: townMaterial(kit, { map: woodTex.map, normalMap: woodTex.normal, normalScale: new THREE.Vector2(0.6, 0.6), vertexColors: true, roughness: 0.72 }, uniforms),
     gold: townMaterial(kit, { color: 0xd9a84e, metalness: 1, roughness: 0.3 }, uniforms, { snow: false }),
     glass: townMaterial(kit, { map: rose, emissiveMap: rose, emissive: 0xffffff, emissiveIntensity: 1.6, roughness: 0.3 }, uniforms, { snow: false }),
     snow: townMaterial(kit, { vertexColors: true, roughness: 0.95 }, uniforms, { snow: false }),
     ice: townMaterial(kit, { color: 0xd6eeff, roughness: 0.12, metalness: 0.1 }, uniforms, { snow: false }),
   };
   const bag = new GeoBag();
+  // stone, wood and roof parts get UVs in real-world units, so the blocks,
+  // grain and tiles are the same size everywhere (not squeezed onto small
+  // parts or smeared round big ones). Parts that set their own UVs say so.
+  const UV_SCALE = { stone: 0.25, wood: 0.6, roof: 0.35 };
+  const rawAdd = bag.add.bind(bag);
+  bag.add = (geo, m, key, color, attrs) => {
+    if (UV_SCALE[key] && !geo.userData.uv) worldUV(geo, UV_SCALE[key], key === 'wood');
+    return rawAdd(geo, m, key, color, attrs);
+  };
   // carved detail (its own random stream, so the town's layout doesn't change)
   const drnd = mulberry32(seed + 101);
   const DT = makeDetailer(bag, drnd, { hero });
@@ -171,6 +189,7 @@ export async function buildTown(kit, uniforms, { lod = 'hero', seed = 11, step =
       const mz = (sgn * run) / 2 - sgn * 0.03, my = (R - drop) / 2 + 0.03;
       const cz = mz + sgn * Math.sin(ang) * (thick / 2), cy = my + Math.cos(ang) * (thick / 2);
       const gg = new THREE.BoxGeometry(len + 2 * ohg, thick, L);
+      gg.userData.uv = true;
       const uvA = gg.attributes.uv;
       for (let i = 0; i < uvA.count; i++) uvA.setXY(i, uvA.getX(i) * (len + 2 * ohg) * 0.35, uvA.getY(i) * L * 0.35);
       bag.add(gg, fr.clone().multiply(mat(0, cy, cz, sgn * ang, 0, 0)), 'roof', color, { build, lit: 2 });
@@ -298,6 +317,7 @@ export async function buildTown(kit, uniforms, { lod = 'hero', seed = 11, step =
       bag.add(new THREE.BoxGeometry(0.06, 0.55, 0.65), m.clone().multiply(mat(h.w * 0.35, 2.25, h.d / 2 + 0.55)), 'wood', ['#7a2a22', '#2a4a6a', '#3a5a32'][Math.floor(rnd() * 3)], { build, lit: 2 });
     }
     obstacle(h.x, h.z, Math.hypot(W, D) / 2 + 0.4, y + y0 + chimneyTop + 0.3);
+    Object.assign(h, { y, yaw, floors, style, wallsH: y0, roofH: roof.R });
   }
 
   if (step) await step();
@@ -323,6 +343,7 @@ export async function buildTown(kit, uniforms, { lod = 'hero', seed = 11, step =
     const h = wallTop - bottom;
     const build = [orderOf(mid.x, mid.z) + 0.05, g0];
     const g = new THREE.BoxGeometry(len, h, 1.1);
+    g.userData.uv = true;
     const uvA = g.attributes.uv;
     for (let k = 0; k < uvA.count; k++) uvA.setXY(k, uvA.getX(k) * len * 0.25, uvA.getY(k) * h * 0.25);
     bag.add(g, mat(mid.x, bottom + h / 2, mid.z, 0, yaw), 'stone', stoneCol, { build, lit: 2 });
@@ -350,6 +371,7 @@ export async function buildTown(kit, uniforms, { lod = 'hero', seed = 11, step =
   const tower = (x, z, r, h, roofCol, build, perch = false, banner = true) => {
     const g0 = topHeight(x, z) - 1.5;
     const body = new THREE.CylinderGeometry(r, r * 1.08, h, hero ? 18 : 10, 1, true);
+    body.userData.uv = true;
     const uvA = body.attributes.uv;
     for (let k = 0; k < uvA.count; k++) uvA.setXY(k, uvA.getX(k) * r * 6.28 * 0.25, uvA.getY(k) * h * 0.25);
     bag.add(body, mat(x, g0 + h / 2, z), 'stone', stoneCol, { build, lit: 2 });
@@ -371,6 +393,7 @@ export async function buildTown(kit, uniforms, { lod = 'hero', seed = 11, step =
     const cb = g0 + h + 0.78;
     bag.add(new THREE.CylinderGeometry(r * 0.92, r * 0.92, 0.5, hero ? 18 : 10), mat(x, cb - 0.2, z), 'stone', '#968f84', { build, lit: 2 });
     const cone = new THREE.ConeGeometry(r + 0.25, r * 2.4, hero ? 18 : 10, 1, true);
+    cone.userData.uv = true;
     const cu = cone.attributes.uv;
     for (let k = 0; k < cu.count; k++) cu.setXY(k, cu.getX(k) * r * 6, cu.getY(k) * r * 2);
     bag.add(cone, mat(x, cb + r * 1.2, z), 'roof', roofCol, { build, lit: 2 });
@@ -430,6 +453,7 @@ export async function buildTown(kit, uniforms, { lod = 'hero', seed = 11, step =
     // a level parapet: the top is the same all the way round, the foot follows the ground
     const top = T.t[1] + 2.7, bottom = g0 - 1.6;
     const g = new THREE.BoxGeometry(len, top - bottom, 0.8);
+    g.userData.uv = true;
     const uvA = g.attributes.uv;
     for (let k = 0; k < uvA.count; k++) uvA.setXY(k, uvA.getX(k) * len * 0.25, uvA.getY(k) * (top - bottom) * 0.25);
     bag.add(g, mat(mid.x, (top + bottom) / 2, mid.z, 0, yaw), 'stone', '#b0a99c', { build, lit: 2 });
@@ -451,6 +475,7 @@ export async function buildTown(kit, uniforms, { lod = 'hero', seed = 11, step =
     const keepStone = '#bdb6a8';
     const box = (w, h, d, x, y, z, col = keepStone, key = 'stone') => {
       const g = new THREE.BoxGeometry(w, h, d);
+      g.userData.uv = true;
       const uvA = g.attributes.uv;
       for (let k = 0; k < uvA.count; k++) uvA.setXY(k, uvA.getX(k) * Math.max(w, d) * 0.25, uvA.getY(k) * h * 0.25);
       bag.add(g, mat(x, y, z), key, col, { build, lit: 2 });
@@ -479,6 +504,7 @@ export async function buildTown(kit, uniforms, { lod = 'hero', seed = 11, step =
     for (const [sx, sz] of [[1, 1], [1, -1], [-1, 1], [-1, -1]]) tower(cx + sx * 4.4, cz + sz * 4.4, 1.25, 16.5, '#3f5a8a', build, false);
     // the tall central tower with a lookout platform (a dragon perch) and a spire to one side
     const tg = new THREE.CylinderGeometry(2.3, 2.4, 11, hero ? 20 : 12, 1, true);
+    tg.userData.uv = true;
     const tu = tg.attributes.uv;
     for (let k = 0; k < tu.count; k++) tu.setXY(k, tu.getX(k) * 3.6, tu.getY(k) * 2.8);
     bag.add(tg, mat(cx, g0 + 14 + 5.5, cz), 'stone', keepStone, { build: [0.02, g0], lit: 2 });
@@ -549,6 +575,7 @@ export async function buildTown(kit, uniforms, { lod = 'hero', seed = 11, step =
       bag.add(q, tm.clone().multiply(mat(ox, 12.4, oz, 0, ry)), 'walls', undefined, { build, lit: 0.12 });
     }
     const spire = new THREE.ConeGeometry(2.3, 9, 8, 1, true);
+    spire.userData.uv = true;
     const su = spire.attributes.uv;
     for (let k = 0; k < su.count; k++) su.setXY(k, su.getX(k) * 6, su.getY(k) * 4);
     bag.add(spire, tm.clone().multiply(mat(0, 19.5, 0, 0, Math.PI / 8)), 'roof', '#3a5a6e', { build, lit: 2 });
@@ -721,6 +748,8 @@ export async function buildTown(kit, uniforms, { lod = 'hero', seed = 11, step =
     heightAt: heights.heightAt,
     houses: houses.length,
     chimneys: DT.chimneys,
+    /** where each house stands (island-local), for inspection */
+    houseList: houses.map(({ x, z, w, d, y, yaw, floors, style, wallsH, roofH }) => ({ x, z, w, d, y, yaw, floors, style, wallsH, roofH })),
     update(t, dt, speed) {
       if (sails) sails.rotation.z -= dt * (0.4 + speed * 0.8);
       if (walkers) walkers.update(t);
@@ -847,4 +876,34 @@ function buildWalkers(kit, uniforms, wallR, wallTop, n) {
       });
     },
   };
+}
+
+/**
+ * Rescale a primitive's UVs to real-world size (k texture repeats per unit):
+ * boxes per face, cylinders and cones round the side and across the caps.
+ * With grain, each box face's texture u follows its longer side.
+ */
+function worldUV(g, k, grain = false) {
+  const p = g.parameters || {};
+  const uv = g.attributes.uv;
+  if (!uv) return;
+  if (g.type === 'BoxGeometry') {
+    const { width: w, height: h, depth: d } = p;
+    // faces in order +x, -x, +y, -y, +z, -z, four vertices each
+    const dims = [[d, h], [d, h], [w, d], [w, d], [w, h], [w, h]];
+    for (let i = 0; i < uv.count; i++) {
+      const [su, sv] = dims[Math.min(5, Math.floor(i / 4))];
+      // wood grain runs along each face's longer side
+      if (grain && sv > su) uv.setXY(i, uv.getY(i) * sv * k, uv.getX(i) * su * k);
+      else uv.setXY(i, uv.getX(i) * su * k, uv.getY(i) * sv * k);
+    }
+  } else if (g.type === 'CylinderGeometry' || g.type === 'ConeGeometry') {
+    const r = Math.max(p.radiusTop ?? 0, p.radiusBottom ?? p.radius ?? 0);
+    const n = g.attributes.normal;
+    for (let i = 0; i < uv.count; i++) {
+      if (Math.abs(n.getY(i)) > 0.999) uv.setXY(i, (uv.getX(i) - 0.5) * 2 * r * k, (uv.getY(i) - 0.5) * 2 * r * k);
+      else uv.setXY(i, uv.getX(i) * Math.PI * 2 * r * k, uv.getY(i) * p.height * k);
+    }
+  }
+  g.userData.uv = true;
 }
