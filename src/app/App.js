@@ -21,6 +21,7 @@ export class App {
     this.params = new URLSearchParams(location.search);
     this.canvas = canvas;
     this.started = false;
+    this.paused = false; // test hook: hold the last frame (screenshots on slow software GL)
     this.mode = 'attract'; // attract | desktop | xr
     this.frame = 0;
     this.stats = { drawCalls: 0, triangles: 0, fps: 0 };
@@ -219,6 +220,7 @@ export class App {
     const now = performance.now();
     const dt = Math.min((now - this._last) / 1000, 0.1);
     this._last = now;
+    if (this.paused) return;
     this.frame++;
     const xr = this.renderer.xr.isPresenting;
 
