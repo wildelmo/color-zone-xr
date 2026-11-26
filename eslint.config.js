@@ -12,6 +12,7 @@ export default [
         console: 'readonly', localStorage: 'readonly', AudioContext: 'readonly', Event: 'readonly', EventTarget: 'readonly',
         DOMException: 'readonly', WebGL2RenderingContext: 'readonly', WebGLRenderingContext: 'readonly', URLSearchParams: 'readonly',
         self: 'readonly', caches: 'readonly', fetch: 'readonly', URL: 'readonly', process: 'readonly', Float32Array: 'readonly',
+        Worker: 'readonly', OffscreenCanvas: 'readonly',
       },
     },
     rules: {
@@ -19,5 +20,5 @@ export default [
       'no-empty': ['error', { allowEmptyCatch: true }],
     },
   },
-  { ignores: ['vendor/**', 'docs/**', 'node_modules/**'] },
+  { ignores: ['vendor/**', 'docs/**', 'node_modules/**', 'tools/test/xr-emulator.js'] },
 ];

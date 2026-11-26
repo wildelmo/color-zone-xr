@@ -1,72 +1,69 @@
-import { App } from './App.js';
+import { App } from './app/App.js';
 
-const canvas = document.getElementById('scene');
-const overlay = document.getElementById('overlay');
-const btnVR = document.getElementById('btn-vr');
-const btnDesktop = document.getElementById('btn-desktop');
-const hint = document.getElementById('xr-hint');
-const desktopHelp = document.getElementById('desktop-help');
-const loading = document.getElementById('loading');
+const $ = (id) => document.getElementById(id);
+const app = new App($('scene'));
+window.__cc = app; // handy for debugging and the automated tests
 
-const params = new URLSearchParams(location.search);
-const app = new App({ canvas, seed: params.get('seed') || 'color-zone', params });
-window.__czx = app;
+const status = $('status');
+const hudStatus = $('hud-status');
+let statusTimer = 0;
+app.onStatus = (text) => {
+  status.textContent = text;
+  hudStatus.textContent = text;
+  hudStatus.classList.add('show');
+  clearTimeout(statusTimer);
+  statusTimer = setTimeout(() => hudStatus.classList.remove('show'), 4500);
+  app.card.set(app.stage.asset ? app.stage.asset.info : null, text.length < 60 ? text : '');
+};
+app.onHeroLoaded = (asset) => app.card.set(asset.info);
+app.onHeroUnloaded = () => app.card.set(null);
+// the HTML toolbar is for desktop only; hide it while the headset is on
+app.onModeChange = (mode) => $('hud').classList.toggle('hidden', mode === 'xr');
 
-function showOverlay(show) {
-  overlay.classList.toggle('hidden', !show);
+function showHud() {
+  $('overlay').classList.add('hidden');
+  $('hud').classList.remove('hidden');
 }
 
-app.isVRSupported().then((ok) => {
-  loading.classList.add('hidden');
-  if (ok) {
-    btnVR.disabled = false;
-    hint.textContent = 'Headset found. Put it on and press Enter VR.';
-  } else {
-    btnVR.disabled = true;
-    hint.innerHTML = navigator.xr
-      ? 'No VR headset detected here. Open this page in the <b>Meta Quest Browser</b> to play in VR.'
-      : 'Open this page in the <b>Meta Quest Browser</b> to play in VR — or explore on desktop below.';
-  }
+$('btn-desktop').addEventListener('click', () => {
+  app.start('desktop');
+  showHud();
 });
 
-btnVR.addEventListener('click', async () => {
-  btnVR.disabled = true;
-  btnVR.textContent = 'Starting…';
-  try {
-    await app.enterVR();
-    showOverlay(false);
-  } catch (err) {
-    console.error('Could not start VR session', err);
-    hint.textContent = 'Could not start VR: ' + (err && err.message ? err.message : err);
-    btnVR.disabled = false;
-  } finally {
-    btnVR.textContent = 'Enter VR';
-  }
-});
-
-btnDesktop.addEventListener('click', () => {
-  app.startDesktop();
-  showOverlay(false);
-});
-
-app.events.on('modechange', (mode) => {
-  desktopHelp.classList.toggle('hidden', mode !== 'desktop');
-});
-
-app.events.on('sessionend', () => {
-  btnVR.disabled = false;
-  showOverlay(true);
-});
-
-window.addEventListener('keydown', (e) => {
-  if (e.code === 'Escape' && app.mode === 'desktop' && !document.pointerLockElement) {
-    app.stopDesktop();
-    showOverlay(true);
-  }
-});
-
-if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register('./sw.js').catch(() => {});
+const vrBtn = $('btn-vr');
+if (navigator.xr && navigator.xr.isSessionSupported) {
+  navigator.xr.isSessionSupported('immersive-vr').then((ok) => {
+    if (ok) {
+      vrBtn.disabled = false;
+      vrBtn.textContent = 'Enter VR';
+      $('hud-vr').classList.remove('hidden');
+    } else vrBtn.textContent = 'VR not available here';
   });
+} else vrBtn.textContent = 'VR not available here';
+
+async function goVR() {
+  app.audio.resume();
+  const ok = await app.enterVR();
+  if (ok) $('overlay').classList.add('hidden');
 }
+vrBtn.addEventListener('click', goVR);
+$('hud-vr').addEventListener('click', goVR);
+
+// desktop HUD buttons
+const windBtn = $('hud-wind');
+const startWind = (e) => {
+  e.preventDefault();
+  app.desktop.setWinding(true);
+};
+const stopWind = () => app.desktop.setWinding(false);
+windBtn.addEventListener('pointerdown', startWind);
+windBtn.addEventListener('pointerup', stopWind);
+windBtn.addEventListener('pointerleave', stopWind);
+$('hud-life').addEventListener('click', () => app.toggleLife());
+$('hud-reset').addEventListener('click', () => app.stage.reset());
+$('hud-mute').addEventListener('click', (e) => {
+  app.audio.setMuted(!app.audio.muted);
+  e.currentTarget.textContent = app.audio.muted ? '🔇' : '🔊';
+});
+
+app.boot();

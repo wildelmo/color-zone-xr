@@ -1,0 +1,54 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>horse lab</title>
+<script type="importmap">{"imports":{"three":"../vendor/three/three.module.min.js","three/addons/":"../vendor/three/addons/"}}</script>
+<style>html,body{margin:0;height:100%;background:#222}canvas{display:block}</style></head>
+<body><script type="module">
+import * as THREE from 'three';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { meshLayer, modelDetails } from '../library/core/sdfClient.js';
+const q = new URLSearchParams(location.search);
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+document.body.appendChild(renderer.domElement);
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x30302f);
+const pm = new THREE.PMREMGenerator(renderer);
+scene.environment = pm.fromScene(new RoomEnvironment(), 0.04).texture;
+const cam = new THREE.PerspectiveCamera(35, innerWidth / innerHeight, 0.01, 50);
+const yaw = +(q.get('yaw') || 0.5), pitch = +(q.get('pitch') || 0.15), dist = +(q.get('dist') || 3.6);
+cam.position.set(Math.sin(yaw) * Math.cos(pitch) * dist, 0.15 + Math.sin(pitch) * dist, Math.cos(yaw) * Math.cos(pitch) * dist);
+cam.lookAt(0, 0.12, 0);
+const dl = new THREE.DirectionalLight(0xfff0dd, 2.2); dl.position.set(2, 3, 2); scene.add(dl);
+const M = new URL('../library/carousel/horseModel.js', import.meta.url).href;
+const cell = +(q.get('cell') || 0.03);
+const mats = {
+  body: new THREE.MeshStandardMaterial({ color: 0xf1e8d6, roughness: 0.35, vertexColors: true }),
+  mane: new THREE.MeshStandardMaterial({ color: 0xc89a3c, roughness: 0.3, metalness: 1 }),
+  saddle: new THREE.MeshStandardMaterial({ color: 0x6a1a14, roughness: 0.4 }),
+  blanket: new THREE.MeshStandardMaterial({ color: 0x2b4a8e, roughness: 0.5 }),
+  gold: new THREE.MeshStandardMaterial({ color: 0xd4a64a, roughness: 0.25, metalness: 1 }),
+};
+const t0 = performance.now();
+let tris = 0;
+for (const layer of Object.keys(mats)) {
+  const g = await meshLayer(M, layer, layer === 'body' || layer === 'mane' ? cell : cell * 0.5);
+  tris += g.index.count / 3;
+  scene.add(new THREE.Mesh(g, mats[layer]));
+}
+const det = await modelDetails(M);
+for (const s of det.straps) {
+  const c = new THREE.CatmullRomCurve3(s.points.map((p) => new THREE.Vector3(...p)), s.closed);
+  const g = new THREE.TubeGeometry(c, s.points.length * 3, s.radius, 6, s.closed);
+  tris += g.index.count / 3;
+  scene.add(new THREE.Mesh(g, mats.gold));
+}
+for (const gm of det.gems) {
+  const m = new THREE.Mesh(new THREE.OctahedronGeometry(gm.size * 0.6, 0), new THREE.MeshStandardMaterial({ color: [0xb0102a, 0x1a4ab0, 0xd4a64a][gm.kind], roughness: 0.1, metalness: gm.kind === 2 ? 1 : 0.2 }));
+  m.position.set(...gm.p); scene.add(m);
+}
+for (const e of det.eyes) { const m = new THREE.Mesh(new THREE.SphereGeometry(e.r, 16, 12), new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.05 })); m.position.set(...e.p); scene.add(m); }
+const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 2.4, 16), mats.gold); scene.add(pole);
+renderer.render(scene, cam);
+window.__done = { ms: Math.round(performance.now() - t0), tris };
+</script></body></html>

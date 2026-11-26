@@ -70,7 +70,7 @@ export class XRInput {
       if (!hs) continue;
       const src = slot.source;
       if (hs.isTrackedHand) {
-        // tracked hands: index tip paints, pinch = trigger
+        // tracked hands: the index tip points, a pinch acts as the trigger
         const joints = slot.hand.joints || {};
         const tipJoint = joints['index-finger-tip'];
         if (tipJoint) {

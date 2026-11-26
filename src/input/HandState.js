@@ -1,11 +1,11 @@
 import * as THREE from 'three';
 
-export const TIP_OFFSET = 0.115; // metres from controller ray origin to brush tip
+export const TIP_OFFSET = 0.115; // metres from the controller's ray origin to its pointing tip
 
 /**
- * Controller-agnostic view of one hand. Filled in each frame by XRInput
- * (real controllers / tracked hands) or DesktopInput (mouse + keyboard), so
- * painting, palette and UI code never care where the input came from.
+ * Controller-agnostic view of one hand, filled in each frame by XRInput from
+ * Touch controllers or tracked hands, so interaction code never cares where
+ * the input came from.
  */
 export class HandState {
   constructor(handedness) {
@@ -95,7 +95,7 @@ export class HandState {
     }
   }
 
-  /** rate-limited light buzz used while painting */
+  /** rate-limited light buzz */
   tick(intensity = 0.15, ms = 40) {
     if (this._pulseT > 0) return;
     this._pulseT = ms / 1000;

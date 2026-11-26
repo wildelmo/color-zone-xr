@@ -1,7 +1,7 @@
 {
-  "name": "color-zone-xr",
-  "version": "1.0.0",
-  "description": "Color Zone XR \u2014 a joyful WebXR painting playground for Meta Quest where every stroke brings a sketched island back to life.",
+  "name": "curio-cabinet",
+  "version": "0.1.0",
+  "description": "The Curio Cabinet: a WebXR gallery and reusable library of intricate, animated, procedurally built little machines, starting with a clockwork music-box carousel.",
   "type": "module",
   "private": true,
   "scripts": {
@@ -9,8 +9,7 @@
     "dev": "node tools/serve.js",
     "test": "node tools/test/run.mjs",
     "test:quick": "node tools/test/run.mjs --quick",
-    "lint": "eslint src tools",
-    "icons": "node tools/make-icons.mjs"
+    "lint": "eslint src library tools"
   },
   "devDependencies": {
     "@eslint/js": "^9.0.0",
