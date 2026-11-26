@@ -51,14 +51,6 @@ export class App {
     this.rig.name = 'rig';
     this.rig.add(this.camera);
     scene.add(this.rig);
-    // a faint ring under your feet when you float up in the big views
-    this.footRing = new THREE.Mesh(
-      new THREE.RingGeometry(0.26, 0.34, 40).rotateX(-Math.PI / 2),
-      new THREE.MeshBasicMaterial({ color: 0xffd38a, transparent: true, opacity: 0.4, depthWrite: false, toneMapped: false }),
-    );
-    this.footRing.name = 'foot-ring';
-    this.footRing.visible = false;
-    this.rig.add(this.footRing);
 
     this.frames = new Frames();
     this.audio = new AudioEngine();
@@ -183,8 +175,8 @@ export class App {
     this.pendingRecenter = { target: new THREE.Vector3(0, 0, 0), yaw: 0, frames: 3 };
     const space = this.renderer.xr.getReferenceSpace();
     space?.addEventListener?.('reset', () => {
-      const life = this.stage.mode === 'life';
-      this.pendingRecenter = { target: new THREE.Vector3(0, 0, life ? 7.4 : 0), yaw: 0, frames: 2 };
+      const v = this.stage.mode === 'life' ? this.stage.lifeView.viewer : [0, 0];
+      this.pendingRecenter = { target: new THREE.Vector3(v[0], 0, v[1]), yaw: this.stage.mode === 'life' ? this.stage.lifeView.yaw || 0 : 0, frames: 2 };
     });
     if (this.stage.pendingShow) this.stage.startShow();
     this.onModeChange?.('xr');
@@ -306,11 +298,6 @@ export class App {
     if (xr) {
       this.xrInput.update(dt);
       shelfHover = this.interaction.update(dt, this.hands, this.rig, this.camera);
-      this.footRing.visible = this.rig.position.y > 0.05;
-      if (this.footRing.visible) {
-        const eye = this.camera.position; // the headset pose, rig-local
-        this.footRing.position.set(eye.x, 0.01, eye.z);
-      }
     } else {
       if (this.mode === 'attract') {
         const t = performance.now() / 1000;

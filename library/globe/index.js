@@ -5,6 +5,7 @@ import { disposeDeep } from '../core/geometry.js';
 import { meshLayer, modelDetails } from '../core/sdfClient.js';
 import { Emitter, Timeline, ease } from '../core/asset.js';
 import { G } from './dimensions.js';
+import { T } from './terrain.js';
 import { buildTown, townUniforms, townMaterial } from './town.js';
 import { buildSmoke } from './smoke.js';
 import { buildTownfolk } from './townfolk.js';
@@ -17,6 +18,8 @@ import { SCORE } from './score.js';
 
 const ROCK = new URL('./islandModel.js', import.meta.url).href;
 
+const GATE_A = T.gateA;
+
 export const info = {
   id: 'globe',
   name: 'Le Royaume de Givre',
@@ -25,17 +28,19 @@ export const info = {
     'A floating island kingdom inside a crystal globe: a walled castle town of some forty houses, a keep and a cathedral, waterfalls spilling into mist, and two small dragons who fly, perch and puff smoke. Shake it to make it snow. Wind the key crystal for the lullaby and the aurora.',
   scale: 1 / 240, // about 43 cm across on the table
   bounds: { center: [0, 62, 0], radius: 64 },
-  // "room size": blown up to about the size of the carousel ride (7 m tall,
-  // 6 m across the glass) standing in the gallery, seen whole from a few
-  // steps back, with the town floating a little above your head
+  // "up close": just what's inside the globe (the island, the town and the
+  // dragons, no glass or base) blown up to about 5 m across, floating in a
+  // snowy night with its streets at waist height. You stand on a walkway
+  // round it, by the main gate, and can lean right in over the rooftops.
   life: {
-    label: 'Room size',
-    scale: 1 / 17,
-    floor: 0, // the base stands on the gallery floor
-    viewer: [0, 6.6],
-    yaw: 0,
-    focus: [0, 69, 0],
-    lift: 4.5, // the right stick floats you up to the rooftops
+    label: 'Up close',
+    scale: 1 / 12,
+    floor: G.islandY - 0.95 * 12, // the lowest terrace at waist height
+    viewer: [Math.cos(GATE_A) * 4, Math.sin(GATE_A) * 4],
+    yaw: Math.atan2(Math.cos(GATE_A), Math.sin(GATE_A)),
+    focus: [0, G.islandY + 3, 0],
+    hideHall: true,
+    walkway: [3.1, 5.4], // metres from the centre
   },
 };
 
@@ -318,6 +323,11 @@ export async function createGlobe(ctx, { lod = 'hero' } = {}) {
     /** give it a shake (from a button; in VR just shake it) */
     shake(amount = 0.8) {
       state.agitation = Math.min(1, state.agitation + amount);
+    },
+    /** 'life' shows just what's inside (no glass, base or crystals); 'toy' the whole globe */
+    setView(mode) {
+      const inside = mode === 'life';
+      for (const o of [base, floor, crystals.group, glass.glass, glass.collar, keyProxy]) if (o) o.visible = !inside;
     },
     dispose() {
       disposeDeep(root);

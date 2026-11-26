@@ -19,7 +19,7 @@ export const info = {
   scale: 1 / 22, // shown as a toy: about half a metre across
   bounds: { center: [0, 4.9, 0], radius: 6.6 },
   // life size: deck at the floor, viewer just outside the platform
-  life: { label: 'Life size', scale: 1, floor: 1.52, viewer: [0, 7.4], yaw: 0, focus: [0, 3.8, 0], lift: 4 },
+  life: { label: 'Life size', scale: 1, floor: 1.52, viewer: [0, 7.4], yaw: 0, focus: [0, 3.8, 0] },
 };
 
 const RUN_SECONDS = 150; // a full wind runs this long

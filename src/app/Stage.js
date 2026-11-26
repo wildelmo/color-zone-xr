@@ -132,17 +132,28 @@ export class Stage {
     this.tweenTo(this.toyPose(), 0.9);
   }
 
-  /** life size (or room size): scale up around a spot the asset chooses */
+  /** the asset's big view: { label, scale, floor, viewer, yaw, focus, hideHall, walkway } */
+  get lifeView() {
+    if (!this.asset) return null;
+    return this.asset.life || this.asset.info.life || { scale: 1, floor: 0, viewer: [0, 6], yaw: 0 };
+  }
+
+  /** life size (or the asset's own big view): scale up around a spot the asset chooses */
   setLife(on, instant = false) {
     const app = this.app;
     if (!this.asset) return;
-    const L = this.asset.life || this.asset.info.life || { scale: 1, floor: 0, viewer: [0, 6], yaw: 0 };
+    const L = this.lifeView;
     const s = L.scale ?? 1;
     if (on && this.mode !== 'life') {
       this.mode = 'life';
       app.hall.setFurnitureVisible(false);
       app.shelf.group.visible = false;
       if (L.hideHall) app.hall.setRoomVisible(false);
+      if (L.walkway) {
+        this.walkway = buildWalkway(L.walkway[0], L.walkway[1]);
+        app.scene.add(this.walkway);
+      }
+      this.asset.setView?.('life');
       const focus = L.focus ? new THREE.Vector3(L.focus[0] * s, (L.focus[1] - L.floor) * s, L.focus[2] * s) : null;
       app.placeRig(new THREE.Vector3(L.viewer[0], 0, L.viewer[1]), L.yaw || 0, focus);
       this.tweenTo({ position: new THREE.Vector3(0, -L.floor * s + (s === 1 ? 0.04 : 0), 0), quaternion: new THREE.Quaternion(), scale: s }, instant ? 0 : 2.4);
@@ -151,6 +162,15 @@ export class Stage {
       this.mode = 'toy';
       app.placeRig(new THREE.Vector3(0, 0, 0), 0);
       app.hall.setRoomVisible(true);
+      this.asset.setView?.('toy');
+      if (this.walkway) {
+        app.scene.remove(this.walkway);
+        this.walkway.traverse((o) => {
+          o.geometry?.dispose();
+          o.material?.dispose();
+        });
+        this.walkway = null;
+      }
       this.tweenTo(this.toyPose(), instant ? 0 : 1.6, () => {
         app.hall.setFurnitureVisible(true);
         app.shelf.group.visible = true;
@@ -162,7 +182,7 @@ export class Stage {
 
   /** what the life-size button should say for the current asset */
   get lifeLabel() {
-    return this.asset?.info.life?.label || 'Life size';
+    return this.lifeView?.label || 'Life size';
   }
 
   update(dt, camera) {
@@ -203,6 +223,32 @@ export class Stage {
     this.bodyProxy.scale.setScalar(wb.radius * 0.8);
     this.bodyProxy.updateMatrixWorld();
   }
+}
+
+/** a round stone walkway with a brass rail, for standing around a floating big view */
+function buildWalkway(inner, outer) {
+  const g = new THREE.Group();
+  g.name = 'walkway';
+  const stone = new THREE.MeshStandardMaterial({ color: 0x3a3430, roughness: 0.8 });
+  const brass = new THREE.MeshStandardMaterial({ color: 0xc9973f, metalness: 1, roughness: 0.3 });
+  const deck = new THREE.Mesh(new THREE.RingGeometry(inner, outer, 96, 1).rotateX(-Math.PI / 2), stone);
+  deck.receiveShadow = true;
+  g.add(deck);
+  // edges with a little thickness, and a low rail on the inner edge
+  const lip = new THREE.Mesh(new THREE.CylinderGeometry(inner, inner, 0.12, 96, 1, true), stone);
+  lip.position.y = -0.06;
+  g.add(lip);
+  const rail = new THREE.Mesh(new THREE.TorusGeometry(inner + 0.06, 0.025, 8, 128).rotateX(Math.PI / 2), brass);
+  rail.position.y = 0.75;
+  g.add(rail);
+  const posts = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.018, 0.022, 0.75, 6).translate(0, 0.375, 0), brass, 40);
+  const m = new THREE.Matrix4();
+  for (let i = 0; i < 40; i++) {
+    const a = (i / 40) * Math.PI * 2;
+    posts.setMatrixAt(i, m.makeTranslation(Math.cos(a) * (inner + 0.06), 0, Math.sin(a) * (inner + 0.06)));
+  }
+  g.add(posts);
+  return g;
 }
 
 function buildLoadingRing() {
