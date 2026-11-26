@@ -132,20 +132,21 @@ export class Stage {
     this.tweenTo(this.toyPose(), 0.9);
   }
 
-  /** step inside: scale to life size around the viewer (where the asset says to stand) */
+  /** life size (or room size): scale up around a spot the asset chooses */
   setLife(on, instant = false) {
     const app = this.app;
     if (!this.asset) return;
-    const L = this.asset.life || this.asset.info.life || { floor: 0, viewer: [0, 6], yaw: 0 };
+    const L = this.asset.life || this.asset.info.life || { scale: 1, floor: 0, viewer: [0, 6], yaw: 0 };
+    const s = L.scale ?? 1;
     if (on && this.mode !== 'life') {
       this.mode = 'life';
       app.hall.setFurnitureVisible(false);
       app.shelf.group.visible = false;
       if (L.hideHall) app.hall.setRoomVisible(false);
-      const focus = L.focus ? new THREE.Vector3(L.focus[0], L.focus[1] - L.floor, L.focus[2]) : null;
+      const focus = L.focus ? new THREE.Vector3(L.focus[0] * s, (L.focus[1] - L.floor) * s, L.focus[2] * s) : null;
       app.placeRig(new THREE.Vector3(L.viewer[0], 0, L.viewer[1]), L.yaw || 0, focus);
-      this.tweenTo({ position: new THREE.Vector3(0, -L.floor + 0.04, 0), quaternion: new THREE.Quaternion(), scale: 1 }, instant ? 0 : 2.4);
-      app.onStatus?.(`${this.asset.info.name}, life size. Walk around with the left stick.`);
+      this.tweenTo({ position: new THREE.Vector3(0, -L.floor * s + (s === 1 ? 0.04 : 0), 0), quaternion: new THREE.Quaternion(), scale: s }, instant ? 0 : 2.4);
+      app.onStatus?.(`${this.asset.info.name}, ${(L.label || 'life size').toLowerCase()}. Walk around it with the left stick.`);
     } else if (!on && this.mode === 'life') {
       this.mode = 'toy';
       app.placeRig(new THREE.Vector3(0, 0, 0), 0);
@@ -157,6 +158,11 @@ export class Stage {
       app.hall.setFurnitureVisible(true);
       app.shelf.group.visible = true;
     }
+  }
+
+  /** what the life-size button should say for the current asset */
+  get lifeLabel() {
+    return this.asset?.info.life?.label || 'Life size';
   }
 
   update(dt, camera) {

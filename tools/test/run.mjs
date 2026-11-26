@@ -12,6 +12,7 @@ import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { loadPlaywright, launchArgs } from './pw.mjs';
 import { serve } from './server.mjs';
+import { openQuest } from '../xr/quest.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const OUT = path.join(ROOT, 'docs', 'screenshots');
@@ -428,15 +429,24 @@ console.log('\n▶ Le Royaume de Givre (snow globe), emulated Quest');
   await page.evaluate(() => window.__xrEmu.setButton('right', 1, false));
   await page.evaluate(() => window.__xrEmu.press('right', 5, 3));
   await page.waitForFunction(() => !window.__cc.stage.tween, null, { timeout: 60000 }).catch(() => {});
-  // step inside it
+  // room size: a big globe standing in the gallery, the town at chest height
   await page.evaluate(() => window.__cc.stage.setLife(true));
   await page.waitForFunction(() => !window.__cc.stage.tween && window.__cc.stage.mode === 'life', null, { timeout: 90000 }).catch(() => {});
   s = await state(page);
-  const roomHidden = await page.evaluate(() => !window.__cc.hall.group.children.find((o) => o.name === 'floor').visible);
-  check(s.stageMode === 'life' && Math.abs(s.scale - 1) < 0.01 && roomHidden, 'life size puts you on the bridge inside the globe');
-  await page.evaluate(() => window.__xrEmu.setHead([0, 1.6, 0], window.__xrEmu.quatYawPitch(0, 0.35)));
+  const big = await page.evaluate(() => {
+    const a = window.__cc;
+    const island = a.stage.asset.root.getObjectByName('island');
+    const p = island.getWorldPosition(island.position.clone());
+    return { islandY: p.y, room: a.hall.group.children.find((o) => o.name === 'floor').visible };
+  });
+  check(s.stageMode === 'life' && Math.abs(s.scale - 1 / 44) < 0.002 && big.room && big.islandY > 1.1 && big.islandY < 1.8, `room size: a big globe in the gallery, the town at chest height (${big.islandY.toFixed(2)} m)`);
+  await page.evaluate(() => window.__xrEmu.setHead([0, 1.6, 0], window.__xrEmu.quatYawPitch(0, -0.25)));
   await page.evaluate(() => window.__xrEmu.waitFrames(6));
-  await snap(page, '17-vr-inside-globe.png', { x: 0, y: 0, width: 800, height: 800 });
+  await snap(page, '17-vr-room-size.png', { x: 0, y: 0, width: 800, height: 800 });
+  // five simulated minutes of dragon flight: never inside a building, never outside the glass
+  const sim = await page.evaluate(() => window.__cc.stage.asset.debug.simulateDragons(300));
+  check(sim.insideBuilding === 0 && sim.outsideGlass === 0, `5 minutes of flight: ${sim.insideBuilding} frames in a building, ${sim.outsideGlass} outside the glass (closest pass ${sim.minClearance.toFixed(1)} m)`);
+  check(sim.perched.length >= 2, `the dragons landed and perched (${sim.perched.join(', ')})`);
   await page.close();
 }
 
@@ -452,6 +462,65 @@ console.log('\n▶ Hold B/Y to exit');
   await page.evaluate(() => window.__xrEmu.setButton('right', 5, false));
   check(await page.evaluate(() => window.__cc.closed && !window.__cc.renderer.xr.isPresenting), 'holding B exits');
   await page.close();
+}
+
+// ------------------------------------------- Meta Quest 3 on Meta's emulator
+// The same visit again, on Meta's own WebXR emulator (IWER, from the
+// Immersive Web SDK) as a Quest 3 with Touch Plus controllers, driven only
+// the way a person would: aim, pull the trigger, squeeze, push the sticks.
+console.log("\n▶ Meta Quest 3 (Meta's IWER emulator), hands on the controllers");
+{
+  const q = await openQuest(browser, url, { query: '?instant&empty', size: [960, 720], errors, out: OUT });
+  const run = (c) => q.run(c);
+  const st = () => run({ cmd: 'state' });
+  check((await run({ cmd: 'enter' })).presenting, 'enters VR as a Quest 3 with two Touch Plus controllers');
+  await run({ cmd: 'head', yaw: 0, pitch: -0.4 });
+  // point at the snow globe's pedestal column and pull the trigger
+  const ped = await run({ cmd: 'find', name: 'pedestal:globe' });
+  const aimed = await run({ cmd: 'aim', hand: 'right', at: [ped.center[0], 0.55, ped.center[2]] });
+  await run({ cmd: 'press', hand: 'right', button: 'trigger' });
+  await q.page.waitForFunction(() => window.__cc.stage.asset?.info.id === 'globe' && !window.__cc.stage.loading, null, { timeout: 300000 }).catch(() => {});
+  let s = await st();
+  check(s.asset === 'globe', `pointing at the globe's pedestal and pulling the trigger brings it to the table (ray hit ${aimed.ray[0]?.name})`);
+  // the panel's Room size button
+  await run({ cmd: 'aim', hand: 'right', at: 'button:life' });
+  await run({ cmd: 'press', hand: 'right', button: 'trigger' });
+  await q.page.waitForFunction(() => !window.__cc.stage.tween && window.__cc.stage.mode === 'life', null, { timeout: 90000 }).catch(() => {});
+  s = await st();
+  check(s.stageMode === 'life' && Math.abs(s.scale - 1 / 44) < 0.002, 'the Room size button stands the globe up big in the gallery');
+  // walk up to it with the left stick and look at the town
+  const z0 = s.head.pos[2];
+  const walked = await run({ cmd: 'stick', hand: 'left', x: 0, y: -1, ms: 1200 });
+  check(walked.head.pos[2] < z0 - 0.3, `the left stick walks you toward it (${(z0 - walked.head.pos[2]).toFixed(2)} m)`);
+  await run({ cmd: 'head', look: [0, 1.75, 0] });
+  await run({ cmd: 'shot', file: '20-quest3-room-size.png' });
+  // tap B: back on the table
+  await run({ cmd: 'press', hand: 'right', button: 'b' });
+  await q.page.waitForFunction(() => !window.__cc.stage.tween && window.__cc.stage.mode === 'toy', null, { timeout: 90000 }).catch(() => {});
+  s = await st();
+  check(s.stageMode === 'toy', 'a tap of B puts it back on the table');
+  // reach out, squeeze, lift it up and shake it
+  await run({ cmd: 'head', at: [0, 1.6, 0], look: 'proxy:hero' });
+  await run({ cmd: 'place', hand: 'right', at: 'proxy:hero' });
+  await run({ cmd: 'down', hand: 'right', button: 'grip' });
+  await run({ cmd: 'move', hand: 'right', to: [0.1, 1.35, -0.35], ms: 600 });
+  s = await st();
+  const held = await run({ cmd: 'find', name: 'proxy:hero' });
+  check(s.grabbed && Math.abs(held.center[1] - 1.35) < 0.05, `squeezing the grip picks it up and it follows your hand (${held.center.map((v) => v.toFixed(2)).join(', ')})`);
+  const a0 = await q.page.evaluate(() => window.__cc.stage.asset.state.agitation);
+  await run({ cmd: 'shake', hand: 'right', amplitude: 0.12, count: 16 });
+  const a1 = await q.page.evaluate(() => window.__cc.stage.asset.state.agitation);
+  check(a1 > a0 + 0.3, `shaking the controller shakes up the snow (${a0.toFixed(2)} → ${a1.toFixed(2)})`);
+  await run({ cmd: 'head', look: 'proxy:hero' });
+  await run({ cmd: 'shot', file: '21-quest3-shaken.png' });
+  await run({ cmd: 'up', hand: 'right', button: 'grip' });
+  // the panel's Exit button ends the session
+  await run({ cmd: 'head', at: [0, 1.6, 0], yaw: 0, pitch: -0.5 });
+  await run({ cmd: 'aim', hand: 'right', at: 'button:exit' });
+  await run({ cmd: 'press', hand: 'right', button: 'trigger' });
+  await q.page.waitForFunction(() => window.__cc.closed, null, { timeout: 60000 }).catch(() => {});
+  check(await q.page.evaluate(() => window.__cc.closed && !window.__cc.renderer.xr.isPresenting), 'the Exit button leaves VR');
+  await q.page.close();
 }
 
 console.log('\n▶ Errors');

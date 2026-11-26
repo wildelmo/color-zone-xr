@@ -5,7 +5,6 @@ import { disposeDeep } from '../core/geometry.js';
 import { meshLayer, modelDetails } from '../core/sdfClient.js';
 import { Emitter, Timeline, ease } from '../core/asset.js';
 import { G } from './dimensions.js';
-import { T, topHeight } from './terrain.js';
 import { buildTown, townUniforms, townMaterial } from './town.js';
 import { buildDragons } from './dragons.js';
 import { buildGlass } from './glass.js';
@@ -15,8 +14,6 @@ import { buildSnow } from './snow.js';
 import { SCORE } from './score.js';
 
 const ROCK = new URL('./islandModel.js', import.meta.url).href;
-// the open market square just inside the gate, between the gatehouse and the well
-const plaza = { x: Math.cos(T.gateA) * 22.7, z: Math.sin(T.gateA) * 22.7 };
 
 export const info = {
   id: 'globe',
@@ -26,13 +23,15 @@ export const info = {
     'A floating island kingdom inside a crystal globe: a walled castle town of some forty houses, a keep and a cathedral, waterfalls spilling into mist, and two small dragons who fly, perch and puff smoke. Shake it to make it snow. Wind the key crystal for the lullaby and the aurora.',
   scale: 1 / 240, // about 43 cm across on the table
   bounds: { center: [0, 62, 0], radius: 64 },
+  // "room size": a globe about 2.4 m across standing in the gallery, the town
+  // at chest height so you can walk round it and lean in over the roofs
   life: {
-    // stand in the market square inside the gate, looking up at the keep
-    floor: G.islandY + topHeight(plaza.x, plaza.z),
-    viewer: [plaza.x, plaza.z],
-    yaw: Math.atan2(-(T.hill[0] - plaza.x), -(T.hill[1] - plaza.z)),
-    focus: [T.hill[0], G.islandY + 22, T.hill[1]], // the keep
-    hideHall: true,
+    label: 'Room size',
+    scale: 1 / 44,
+    floor: 0, // the base stands on the gallery floor
+    viewer: [0, 2.6],
+    yaw: 0,
+    focus: [0, 66, 0],
   },
 };
 
@@ -97,8 +96,9 @@ export async function createGlobe(ctx, { lod = 'hero' } = {}) {
   // ------------------------------------------------------------- dragons
   progress(0.6, 'waking the dragons');
   const perches = town.perches.map((p) => ({ ...p, p: p.p.clone().add(new THREE.Vector3(0, G.islandY, 0)) }));
-  if (anchors.key) perches.push({ p: new THREE.Vector3(...anchors.key.p).add(new THREE.Vector3(0, 7.5, 0)), yaw: 0, kind: 'crystal' });
-  const dragons = await buildDragons(ctx, kit, { lod, perches });
+  // the town's height map (island-local) lifted into asset space, for flight avoidance
+  const heightAt = (x, z, dilated = true) => G.islandY + town.heightAt(x, z, dilated);
+  const dragons = await buildDragons(ctx, kit, { lod, perches, heightAt });
   root.add(dragons.group);
   await ctx.step();
 
@@ -288,11 +288,7 @@ export async function createGlobe(ctx, { lod = 'hero' } = {}) {
     interactions,
     timeline,
     stats: { houses: town.houses },
-    debug: { dragons: dragons.dragons, perches, snow },
-    // stand on the bridge over the river at life size (computed with the town)
-    life: town.viewpoint
-      ? { ...info.life, floor: G.islandY + town.viewpoint.y, viewer: [town.viewpoint.x, town.viewpoint.z], yaw: town.viewpoint.yaw }
-      : info.life,
+    debug: { dragons: dragons.dragons, perches, snow, simulateDragons: dragons.simulate, heightAt },
     update,
     assemble() {
       timeline.play();

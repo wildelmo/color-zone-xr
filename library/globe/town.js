@@ -92,24 +92,28 @@ export function buildTown(kit, uniforms, { lod = 'hero', seed = 11 } = {}) {
   let viewpoint = null;
 
   // ------------------------------------------------------------ helpers
-  /** a façade wall from (x0,z0) to (x1,z1) at base y, floors, tiles per bay */
-  const facade = (p0, p1, y, floors, style, doorBay, build, lit) => {
-    const len = Math.hypot(p1.x - p0.x, p1.z - p0.z);
-    const bays = Math.max(1, Math.round(len / 2.3));
-    const bw = len / bays;
-    const dir = new THREE.Vector3(p1.x - p0.x, 0, p1.z - p0.z).normalize();
-    const nrm = new THREE.Vector3(-dir.z, 0, dir.x); // outward: dir x up
+  // obstacles for the dragons: circles with a top height (island-local)
+  const obstacles = [];
+  const obstacle = (x, z, r, top) => obstacles.push({ x, z, r, top });
+
+  /**
+   * One storey of walls: a closed ring of façade bays around a w x d
+   * rectangle in the frame m (local y from y0 to y0 + h). Corners meet
+   * exactly, so there are no gaps. kindOf(wall, bay, bays) picks the tile.
+   */
+  const storey = (m, w, d, y0, h, style, kindOf, build, lit) => {
+    const P = [[-w / 2, d / 2], [w / 2, d / 2], [w / 2, -d / 2], [-w / 2, -d / 2]];
     const pos = [], uv = [], idx = [];
     let vi = 0;
-    for (let f = 0; f < floors; f++) {
-      const h0 = y + (f === 0 ? 0 : 3.1 + (f - 1) * 2.8), h1 = h0 + (f === 0 ? 3.1 : 2.8);
+    for (let k = 0; k < 4; k++) {
+      const [x0, z0] = P[k], [x1, z1] = P[(k + 1) % 4];
+      const len = Math.hypot(x1 - x0, z1 - z0);
+      const bays = Math.max(1, Math.round(len / 2.3));
       for (let b = 0; b < bays; b++) {
-        const kind = f === 0 ? (b === doorBay ? 0 : 1) : rnd() < 0.8 ? 2 : 3;
-        const [u0, v0, u1, v1] = tileUV(style, kind);
-        const a = p0.clone().addScaledVector(dir, b * bw), c = p0.clone().addScaledVector(dir, (b + 1) * bw);
-        // jettied upper floors on timber houses
-        const out = style % 2 === 0 && f > 0 ? 0.18 * f : 0;
-        pos.push(a.x + nrm.x * out, h0, a.z + nrm.z * out, c.x + nrm.x * out, h0, c.z + nrm.z * out, c.x + nrm.x * out, h1, c.z + nrm.z * out, a.x + nrm.x * out, h1, a.z + nrm.z * out);
+        const [u0, v0, u1, v1] = tileUV(style, kindOf(k, b, bays));
+        const ax = x0 + ((x1 - x0) * b) / bays, az = z0 + ((z1 - z0) * b) / bays;
+        const cx = x0 + ((x1 - x0) * (b + 1)) / bays, cz = z0 + ((z1 - z0) * (b + 1)) / bays;
+        pos.push(ax, y0, az, cx, y0, cz, cx, y0 + h, cz, ax, y0 + h, az);
         uv.push(u0, v0, u1, v0, u1, v1, u0, v1);
         idx.push(vi, vi + 1, vi + 2, vi, vi + 2, vi + 3);
         vi += 4;
@@ -120,40 +124,46 @@ export function buildTown(kit, uniforms, { lod = 'hero', seed = 11 } = {}) {
     g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
     g.setIndex(idx);
     g.computeVertexNormals();
-    bag.add(g, null, 'walls', undefined, { build, lit });
+    bag.add(g, m, 'walls', undefined, { build, lit });
   };
 
-  /** a roof slab between two lines, with tile uv scaled to metres */
-  const slab = (w, len, thick, m, key, color, build) => {
-    const g = new THREE.BoxGeometry(w, thick, len);
-    const uvA = g.attributes.uv;
-    for (let i = 0; i < uvA.count; i++) uvA.setXY(i, uvA.getX(i) * w * 0.35, uvA.getY(i) * len * 0.35);
-    bag.add(g, m, key, color, { build, lit: 2 });
-  };
-
-  /** a pitched roof over a w x d footprint centred at origin of matrix m (ridge along x) */
-  const gableRoof = (m, w, d, pitchH, color, build) => {
-    const oh = 0.35;
-    const half = d / 2 + oh;
-    const slope = Math.hypot(half, pitchH);
-    const ang = Math.atan2(pitchH, half);
-    for (const s of [1, -1]) {
-      const mm = m.clone().multiply(mat(0, pitchH / 2, (s * half) / 2, s * ang, 0, 0));
-      slab(w + oh * 2, slope + 0.1, 0.22, mm, 'roof', color, build);
-    }
-    // ridge cap
-    bag.add(new THREE.BoxGeometry(w + oh * 2 + 0.1, 0.25, 0.32), m.clone().multiply(mat(0, pitchH + 0.08, 0)), 'roof', '#3a3a3a', { build, lit: 2 });
-  };
-
-  const gable = (m, w, pitchH, style, build, lit) => {
-    // triangular gable end in plaster (uses the plain tile)
+  const gable = (m, span, rise, style, build, lit) => {
+    // triangular gable end in plaster (uses the plain tile), base at y = 0
     const [u0, v0, u1, v1] = tileUV(style, 3);
     const g = new THREE.BufferGeometry();
-    g.setAttribute('position', new THREE.Float32BufferAttribute([-w / 2, 0, 0, w / 2, 0, 0, 0, pitchH, 0], 3));
+    g.setAttribute('position', new THREE.Float32BufferAttribute([-span / 2, 0, 0, span / 2, 0, 0, 0, rise, 0], 3));
     g.setAttribute('uv', new THREE.Float32BufferAttribute([u0, v0, u1, v0, (u0 + u1) / 2, v1], 2));
     g.setIndex([0, 1, 2]);
     g.computeVertexNormals();
     bag.add(g, m, 'walls', undefined, { build, lit });
+  };
+
+  /**
+   * A pitched roof sitting exactly on a W x D top (frame m, y = 0 at the
+   * wall tops). The slabs' undersides run from the wall-top edges to the
+   * ridge, so walls and gables meet them with no gaps. Returns the ridge
+   * height above the wall tops.
+   */
+  const pitchedRoof = (m, W, D, alongX, tanA, color, style, build, lit) => {
+    const fr = alongX ? m : m.clone().multiply(mat(0, 0, 0, 0, Math.PI / 2));
+    const span = alongX ? D : W, len = alongX ? W : D;
+    const R = (span / 2) * tanA;
+    const ang = Math.atan(tanA);
+    const oh = 0.35, ohg = 0.25, thick = 0.2;
+    const run = span / 2 + oh, drop = oh * tanA;
+    const L = Math.hypot(run, R + drop) + 0.14;
+    for (const sgn of [1, -1]) {
+      // underside from the ridge (0, R) down past the wall top to the eave
+      const mz = (sgn * run) / 2 - sgn * 0.03, my = (R - drop) / 2 + 0.03;
+      const cz = mz + sgn * Math.sin(ang) * (thick / 2), cy = my + Math.cos(ang) * (thick / 2);
+      const gg = new THREE.BoxGeometry(len + 2 * ohg, thick, L);
+      const uvA = gg.attributes.uv;
+      for (let i = 0; i < uvA.count; i++) uvA.setXY(i, uvA.getX(i) * (len + 2 * ohg) * 0.35, uvA.getY(i) * L * 0.35);
+      bag.add(gg, fr.clone().multiply(mat(0, cy, cz, sgn * ang, 0, 0)), 'roof', color, { build, lit: 2 });
+    }
+    bag.add(new THREE.BoxGeometry(len + 2 * ohg + 0.1, 0.24, 0.38), fr.clone().multiply(mat(0, R + thick * 0.85, 0)), 'roof', '#3a3a3a', { build, lit: 2 });
+    for (const sgn of [1, -1]) gable(fr.clone().multiply(mat(sgn * (len / 2 - 0.004), 0, 0, 0, (sgn * Math.PI) / 2)), span, R, style, build, lit);
+    return { R, fr, span, len };
   };
 
   // --------------------------------------------------------------- houses
@@ -222,36 +232,40 @@ export function buildTown(kit, uniforms, { lod = 'hero', seed = 11 } = {}) {
     // local frame: +z faces the street
     const yaw = Math.atan2(Math.cos(h.a), Math.sin(h.a)) + (h.facing > 0 ? 0 : Math.PI);
     const m = mat(h.x, y, h.z, 0, yaw);
-    const w = h.w, d = h.d;
-    const height = 3.1 + (floors - 1) * 2.8;
-    const corners = [new THREE.Vector3(-w / 2, 0, d / 2), new THREE.Vector3(w / 2, 0, d / 2), new THREE.Vector3(w / 2, 0, -d / 2), new THREE.Vector3(-w / 2, 0, -d / 2)].map((v) => v.applyMatrix4(m));
-    const doorBay = Math.floor(rnd() * Math.max(1, Math.round(w / 2.3)));
-    facade(corners[0], corners[1], y, floors, style, doorBay, build, lit); // front (street)
-    facade(corners[1], corners[2], y, floors, style, -1, build, lit + 0.05);
-    facade(corners[2], corners[3], y, floors, style, -1, build, lit + 0.1);
-    facade(corners[3], corners[0], y, floors, style, -1, build, lit + 0.02);
-    // roof: ridge along the street (x) or gable to the street
-    const ridgeX = rnd() < 0.7;
+    const jet = style % 2 === 0 ? 0.18 : 0; // timber houses step out at each upper floor
+    const doorBay = Math.floor(rnd() * Math.max(1, Math.round(h.w / 2.3)));
+    let y0 = 0;
+    for (let f = 0; f < floors; f++) {
+      const hh = f === 0 ? 3.1 : 2.8;
+      const ww = h.w + 2 * jet * f, dd = h.d + 2 * jet * f;
+      storey(m, ww, dd, y0, hh, style, (k, b) => (f === 0 ? (k === 0 && b === doorBay ? 0 : 1) : rnd() < 0.8 ? 2 : 3), build, lit + f * 0.04);
+      if (f > 0 && jet) bag.add(new THREE.BoxGeometry(ww + 0.1, 0.18, dd + 0.1), m.clone().multiply(mat(0, y0 + 0.02, 0)), 'wood', '#3a2618', { build, lit: 2 });
+      y0 += hh;
+    }
+    const W = h.w + 2 * jet * (floors - 1), D = h.d + 2 * jet * (floors - 1);
+    const alongX = rnd() < 0.7;
     const roofCol = ROOF_COLORS[Math.floor(rnd() * ROOF_COLORS.length)];
-    const top = m.clone().multiply(mat(0, height + (style % 2 === 0 ? 0.18 * (floors - 1) : 0), 0, 0, ridgeX ? 0 : Math.PI / 2));
-    const rw = ridgeX ? w : d, rd = ridgeX ? d : w;
-    const pitch = rd * (0.55 + rnd() * 0.25);
-    gableRoof(top, rw + 0.05, rd + 0.05, pitch, roofCol, build);
-    for (const s of [1, -1]) gable(top.clone().multiply(mat((s * rw) / 2, 0, 0, 0, s * Math.PI / 2)), rd + 0.02, pitch, style, build, lit);
-    // chimney (stone) with a cap
+    const top = m.clone().multiply(mat(0, y0, 0));
+    const roof = pitchedRoof(top, W, D, alongX, 0.95 + rnd() * 0.55, roofCol, style, build, lit);
+    // chimney (stone) rising through the roof, with a cap
+    let chimneyTop = roof.R;
     if (rnd() < 0.75) {
-      const cx = (rnd() - 0.5) * rw * 0.6;
-      const cz = (rnd() < 0.5 ? 1 : -1) * rd * 0.2;
-      bag.add(new THREE.BoxGeometry(0.6, pitch + 1.4, 0.6), top.clone().multiply(mat(cx, (pitch + 1.4) / 2 - 0.2, cz)), 'stone', '#9a948a', { build, lit: 2 });
-      bag.add(new THREE.BoxGeometry(0.85, 0.18, 0.85), top.clone().multiply(mat(cx, pitch + 1.25, cz)), 'stone', '#7a746a', { build, lit: 2 });
+      const cx = (rnd() - 0.5) * roof.len * 0.6;
+      const cz = (rnd() < 0.5 ? 1 : -1) * roof.span * 0.22;
+      const atRoof = roof.R * (1 - Math.abs(cz) / (roof.span / 2));
+      const ch = atRoof + 1.3;
+      bag.add(new THREE.BoxGeometry(0.6, ch, 0.6), roof.fr.clone().multiply(mat(cx, ch / 2, cz)), 'stone', '#9a948a', { build, lit: 2 });
+      bag.add(new THREE.BoxGeometry(0.85, 0.18, 0.85), roof.fr.clone().multiply(mat(cx, ch, cz)), 'stone', '#7a746a', { build, lit: 2 });
+      chimneyTop = Math.max(chimneyTop, ch);
     }
     // stone foundation reaching down the slope
-    bag.add(new THREE.BoxGeometry(w + 0.2, 2.2, d + 0.2), m.clone().multiply(mat(0, -1.0, 0)), 'stone', '#8a847a', { build, lit: 2 });
+    bag.add(new THREE.BoxGeometry(h.w + 0.2, 2.2, h.d + 0.2), m.clone().multiply(mat(0, -1.0, 0)), 'stone', '#8a847a', { build, lit: 2 });
     // a hanging shop sign now and then
     if (hero && rnd() < 0.25) {
-      bag.add(new THREE.BoxGeometry(0.06, 0.06, 0.8), m.clone().multiply(mat(w * 0.35, 2.6, d / 2 + 0.4)), 'wood', '#3a2618', { build, lit: 2 });
-      bag.add(new THREE.BoxGeometry(0.06, 0.55, 0.65), m.clone().multiply(mat(w * 0.35, 2.25, d / 2 + 0.55)), 'wood', ['#7a2a22', '#2a4a6a', '#3a5a32'][Math.floor(rnd() * 3)], { build, lit: 2 });
+      bag.add(new THREE.BoxGeometry(0.06, 0.06, 0.8), m.clone().multiply(mat(h.w * 0.35, 2.6, h.d / 2 + 0.4)), 'wood', '#3a2618', { build, lit: 2 });
+      bag.add(new THREE.BoxGeometry(0.06, 0.55, 0.65), m.clone().multiply(mat(h.w * 0.35, 2.25, h.d / 2 + 0.55)), 'wood', ['#7a2a22', '#2a4a6a', '#3a5a32'][Math.floor(rnd() * 3)], { build, lit: 2 });
     }
+    obstacle(h.x, h.z, Math.hypot(W, D) / 2 + 0.4, y + y0 + chimneyTop + 0.3);
   }
 
   // ---------------------------------------------------------- town walls
@@ -279,6 +293,7 @@ export function buildTown(kit, uniforms, { lod = 'hero', seed = 11 } = {}) {
     const uvA = g.attributes.uv;
     for (let k = 0; k < uvA.count; k++) uvA.setXY(k, uvA.getX(k) * len * 0.25, uvA.getY(k) * h * 0.25);
     bag.add(g, mat(mid.x, bottom + h / 2, mid.z, 0, yaw), 'stone', stoneCol, { build, lit: 2 });
+    obstacle(mid.x, mid.z, Math.max(1.0, len * 0.6), wallTop + 0.8);
     // merlons on the outer edge
     const out = new THREE.Vector3(mid.x, 0, mid.z).normalize();
     for (let k = 0; k < Math.max(1, Math.round(len / 1.25)); k++) {
@@ -300,12 +315,15 @@ export function buildTown(kit, uniforms, { lod = 'hero', seed = 11 } = {}) {
       const a = (k / 10) * Math.PI * 2;
       bag.add(new THREE.BoxGeometry(0.55, 0.65, 0.35), mat(x + Math.cos(a) * (r + 0.15), g0 + h + 0.4, z + Math.sin(a) * (r + 0.15), 0, Math.PI / 2 - a), 'stone', stoneCol, { build, lit: 2 });
     }
-    const cone = new THREE.ConeGeometry(r + 0.4, r * 2.4, hero ? 18 : 10, 1, true);
+    // the cone roof sits on a short drum above the crenellations
+    const cb = g0 + h + 0.78;
+    bag.add(new THREE.CylinderGeometry(r * 0.92, r * 0.92, 0.5, hero ? 18 : 10), mat(x, cb - 0.2, z), 'stone', '#968f84', { build, lit: 2 });
+    const cone = new THREE.ConeGeometry(r + 0.25, r * 2.4, hero ? 18 : 10, 1, true);
     const cu = cone.attributes.uv;
     for (let k = 0; k < cu.count; k++) cu.setXY(k, cu.getX(k) * r * 6, cu.getY(k) * r * 2);
-    bag.add(cone, mat(x, g0 + h + 0.2 + r * 1.2, z), 'roof', roofCol, { build, lit: 2 });
-    bag.add(lathe([[0, 0], [0.12, 0], [0.18, 0.2], [0.05, 0.4], [0.03, 1.4], [0, 1.45]], 8), mat(x, g0 + h + 0.2 + r * 2.4, z), 'gold', undefined, { build, lit: 2 });
-    if (banner && hero) bag.add(new THREE.BoxGeometry(0.04, 0.5, 0.9), mat(x, g0 + h + 0.4 + r * 2.4 + 0.8, z + 0.45), 'wood', roofCol, { build, lit: 2 });
+    bag.add(cone, mat(x, cb + r * 1.2, z), 'roof', roofCol, { build, lit: 2 });
+    bag.add(lathe([[0, 0], [0.12, 0], [0.18, 0.2], [0.05, 0.4], [0.03, 1.4], [0, 1.45]], 8), mat(x, cb + r * 2.4, z), 'gold', undefined, { build, lit: 2 });
+    if (banner && hero) bag.add(new THREE.BoxGeometry(0.04, 0.5, 0.9), mat(x, cb + r * 2.4 + 0.8, z + 0.45), 'wood', roofCol, { build, lit: 2 });
     // arrow-slit windows that glow
     if (hero) {
       for (let k = 0; k < 3; k++) {
@@ -320,13 +338,16 @@ export function buildTown(kit, uniforms, { lod = 'hero', seed = 11 } = {}) {
         bag.add(q, mat(x + Math.cos(a) * (r + 0.02), g0 + h * (0.45 + k * 0.15), z + Math.sin(a) * (r + 0.02), 0, Math.PI / 2 - a), 'walls', undefined, { build, lit: 0.2 + rnd() * 0.6 });
       }
     }
-    if (perch) perches.push({ p: new THREE.Vector3(x, g0 + h + 0.75, z), yaw: rnd() * Math.PI * 2, kind: 'tower' });
+    const tip = cb + r * 2.4;
+    obstacle(x, z, r + 0.7, tip + 1.6);
+    // a dragon can sit on top of the cone, by the finial
+    if (perch) perches.push({ p: new THREE.Vector3(x, tip + 0.15, z), yaw: rnd() * Math.PI * 2, kind: 'tower' });
     return g0 + h;
   };
   towerAngles.forEach((a, i) => {
     if (i === 0) return; // gatehouse instead
     const r = wallR(a) + 0.2;
-    tower(Math.cos(a) * r, Math.sin(a) * r, 2.0, 7.4, TOWER_ROOFS[i % TOWER_ROOFS.length], [orderOf(Math.cos(a) * r, Math.sin(a) * r), 0], i === 4);
+    tower(Math.cos(a) * r, Math.sin(a) * r, 2.0, 7.4, TOWER_ROOFS[i % TOWER_ROOFS.length], [orderOf(Math.cos(a) * r, Math.sin(a) * r), 0], i === 4 || i === 9);
   });
   // gatehouse: two big towers and an arch
   {
@@ -351,11 +372,17 @@ export function buildTown(kit, uniforms, { lod = 'hero', seed = 11 } = {}) {
     const p1 = new THREE.Vector3(hill.x + Math.cos(a1) * R, 0, hill.y + Math.sin(a1) * R);
     const mid = p0.clone().add(p1).multiplyScalar(0.5);
     const g0 = topHeight(mid.x, mid.z);
-    const len = p0.distanceTo(p1) + 0.05;
+    const len = p0.distanceTo(p1) + 0.06;
     const yaw = Math.atan2(p1.x - p0.x, p1.z - p0.z) - Math.PI / 2;
     const build = [orderOf(mid.x, mid.z), g0];
-    bag.add(new THREE.BoxGeometry(len, 4.2, 0.8), mat(mid.x, g0 + 0.6, mid.z, 0, yaw), 'stone', '#b0a99c', { build, lit: 2 });
-    if (i % 2 === 0) bag.add(new THREE.BoxGeometry(0.5, 0.55, 0.3), mat(mid.x, g0 + 2.95, mid.z, 0, yaw), 'stone', '#b0a99c', { build, lit: 2 });
+    // a level parapet: the top is the same all the way round, the foot follows the ground
+    const top = T.t[1] + 2.7, bottom = g0 - 1.6;
+    const g = new THREE.BoxGeometry(len, top - bottom, 0.8);
+    const uvA = g.attributes.uv;
+    for (let k = 0; k < uvA.count; k++) uvA.setXY(k, uvA.getX(k) * len * 0.25, uvA.getY(k) * (top - bottom) * 0.25);
+    bag.add(g, mat(mid.x, (top + bottom) / 2, mid.z, 0, yaw), 'stone', '#b0a99c', { build, lit: 2 });
+    obstacle(mid.x, mid.z, Math.max(1.0, len * 0.6), top + 0.8);
+    if (i % 2 === 0) bag.add(new THREE.BoxGeometry(0.5, 0.55, 0.3), mat(mid.x, top + 0.27, mid.z, 0, yaw), 'stone', '#b0a99c', { build, lit: 2 });
   }
   for (let i = 0; i < 6; i++) {
     const a = T.lanes[0] + 0.25 + (i / 6) * Math.PI * 2;
@@ -407,19 +434,27 @@ export function buildTown(kit, uniforms, { lod = 'hero', seed = 11 } = {}) {
       const a = (k / 12) * Math.PI * 2;
       bag.add(new THREE.BoxGeometry(0.7, 0.8, 0.4), mat(cx + Math.cos(a) * 2.7, g0 + 25.9, cz + Math.sin(a) * 2.7, 0, Math.PI / 2 - a), 'stone', keepStone, { build: [0.02, g0], lit: 2 });
     }
-    perches.push({ p: new THREE.Vector3(cx, g0 + 25.6, cz), yaw: 0.4, kind: 'keep' });
     // little spire turret on the platform's edge
     const sx = cx - 1.6, sz = cz - 1.2;
+    {
+      // the lookout platform is a perch: sit side-on to the turret so the tail clears it
+      const tx = sx - cx, tz = sz - cz, tl = Math.hypot(tx, tz);
+      const fx = -tz / tl, fz = tx / tl;
+      perches.push({ p: new THREE.Vector3(cx + (-tx / tl) * 0.6, g0 + 25.6, cz + (-tz / tl) * 0.6), yaw: Math.atan2(-fz, fx), kind: 'keep' });
+    }
+    obstacle(cx, cz, 6.8, g0 + 15.4);
+    obstacle(cx, cz, 3.2, g0 + 26.6);
+    obstacle(sx, sz, 1.4, g0 + 36.2);
     bag.add(new THREE.CylinderGeometry(0.75, 0.75, 3.2, 12), mat(sx, g0 + 27.2, sz), 'stone', keepStone, { build: [0.03, g0], lit: 2 });
     bag.add(new THREE.ConeGeometry(1.0, 5.2, 12, 1, true), mat(sx, g0 + 31.4, sz), 'roof', '#3f5a8a', { build: [0.03, g0], lit: 2 });
     bag.add(lathe([[0, 0], [0.15, 0], [0.22, 0.3], [0.06, 0.5], [0.04, 2], [0, 2.1]], 8), mat(sx, g0 + 34, sz), 'gold', undefined, { build: [0.03, g0], lit: 2 });
     // great hall beside the keep
     const hx = cx + 7.2, hz = cz + 1.2;
     const hm = mat(hx, g0 + 0.2, hz, 0, Math.PI / 2);
-    const corners = [new THREE.Vector3(-5, 0, 2.6), new THREE.Vector3(5, 0, 2.6), new THREE.Vector3(5, 0, -2.6), new THREE.Vector3(-5, 0, -2.6)].map((v) => v.applyMatrix4(hm));
-    for (let k = 0; k < 4; k++) facade(corners[k], corners[(k + 1) % 4], g0 + 0.2, 2, 1, k === 0 ? 2 : -1, [0.08, g0], 0.25 + k * 0.05);
-    gableRoof(hm.clone().multiply(mat(0, 6.1, 0)), 10.2, 5.4, 4.2, '#5b6b7c', [0.08, g0]);
-    for (const s of [1, -1]) gable(hm.clone().multiply(mat(s * 5.1, 6.1, 0, 0, (s * Math.PI) / 2)), 5.4, 4.2, 1, [0.08, g0], 0.4);
+    storey(hm, 10, 5.2, 0, 3.1, 1, (k, b) => (k === 0 && b === 2 ? 0 : 1), [0.08, g0], 0.25);
+    storey(hm, 10, 5.2, 3.1, 2.8, 1, () => 2, [0.08, g0], 0.3);
+    pitchedRoof(hm.clone().multiply(mat(0, 5.9, 0)), 10, 5.2, true, 1.6, '#5b6b7c', 1, [0.08, g0], 0.4);
+    obstacle(hx, hz, 6.0, g0 + 0.2 + 5.9 + 4.4);
   }
 
   // ----------------------------------------------------------- cathedral
@@ -429,11 +464,10 @@ export function buildTown(kit, uniforms, { lod = 'hero', seed = 11 } = {}) {
     const m = mat(cath.x, g0, cath.y, 0, yaw);
     const build = [orderOf(cath.x, cath.y), g0];
     const W = 5.2, L = 12;
-    const c = [new THREE.Vector3(-W / 2, 0, L / 2), new THREE.Vector3(W / 2, 0, L / 2), new THREE.Vector3(W / 2, 0, -L / 2), new THREE.Vector3(-W / 2, 0, -L / 2)].map((v) => v.applyMatrix4(m));
-    for (let k = 0; k < 4; k++) facade(c[k], c[(k + 1) % 4], g0, 2, 1, k === 0 ? 1 : -1, build, 0.2);
-    const top = m.clone().multiply(mat(0, 5.9, 0, 0, Math.PI / 2));
-    gableRoof(top, L + 0.1, W + 0.1, 4.8, '#3f4a5a', build);
-    for (const s of [1, -1]) gable(top.clone().multiply(mat((s * L) / 2, 0, 0, 0, (s * Math.PI) / 2)), W, 4.8, 1, build, 0.2);
+    storey(m, W, L, 0, 3.1, 1, (k, b, n) => (k === 0 && b === Math.floor(n / 2) ? 0 : 1), build, 0.2);
+    storey(m, W, L, 3.1, 2.8, 1, () => 2, build, 0.2);
+    pitchedRoof(m.clone().multiply(mat(0, 5.9, 0)), W, L, false, 1.85, '#3f4a5a', 1, build, 0.2);
+    obstacle(cath.x, cath.y, 7.0, g0 + 5.9 + 5.2);
     // buttresses
     for (let k = 0; k < 4; k++) {
       for (const s of [1, -1]) {
@@ -466,8 +500,11 @@ export function buildTown(kit, uniforms, { lod = 'hero', seed = 11 } = {}) {
     for (let k = 0; k < su.count; k++) su.setXY(k, su.getX(k) * 6, su.getY(k) * 4);
     bag.add(spire, tm.clone().multiply(mat(0, 19.5, 0, 0, Math.PI / 8)), 'roof', '#3a5a6e', { build, lit: 2 });
     bag.add(lathe([[0, 0], [0.18, 0], [0.25, 0.3], [0.07, 0.6], [0.05, 1.6], [0, 1.7]], 8), tm.clone().multiply(mat(0, 24, 0)), 'gold', undefined, { build, lit: 2 });
-    const sp = new THREE.Vector3(0, 15.2, 0).applyMatrix4(tm);
+    // the very tip of the spire is a perch
+    const sp = new THREE.Vector3(0, 24.4, 0).applyMatrix4(tm);
     perches.push({ p: sp, yaw: yaw + 1.2, kind: 'steeple' });
+    const tc = new THREE.Vector3(0, 0, 0).applyMatrix4(tm);
+    obstacle(tc.x, tc.z, 2.8, g0 + 25.9);
   }
 
   // ------------------------------------------------------------ windmill
@@ -477,6 +514,7 @@ export function buildTown(kit, uniforms, { lod = 'hero', seed = 11 } = {}) {
     const build = [orderOf(mill.x, mill.y), g0];
     bag.add(lathe([[0, 0], [2.0, 0], [1.9, 0.4], [1.5, 6.5], [1.6, 6.7], [0, 6.7]], hero ? 16 : 10), mat(mill.x, g0, mill.y), 'stone', '#d8d0c0', { build, lit: 2 });
     bag.add(new THREE.ConeGeometry(1.9, 2.4, hero ? 16 : 10), mat(mill.x, g0 + 7.9, mill.y), 'roof', '#6e4a3a', { build, lit: 2 });
+    obstacle(mill.x, mill.y, 5.2, g0 + 10.2);
     sails = new THREE.Group();
     const out = new THREE.Vector3(mill.x, 0, mill.y).normalize();
     sails.position.set(mill.x + out.x * 1.9, g0 + 6.4, mill.y + out.z * 1.9);
@@ -581,17 +619,71 @@ export function buildTown(kit, uniforms, { lod = 'hero', seed = 11 } = {}) {
   const walkers = buildWalkers(kit, uniforms, wallR, wallTop, hero ? 8 : 0);
   if (walkers) group.add(walkers.mesh);
 
+  const heights = heightGrid(obstacles);
   return {
     group,
     perches,
     lanterns,
     viewpoint,
+    obstacles,
+    /** highest solid thing at (x, z) (island-local); dilated adds a dragon-sized margin */
+    heightAt: heights.heightAt,
     houses: houses.length,
     update(t, dt, speed) {
       if (sails) sails.rotation.z -= dt * (0.4 + speed * 0.8);
       if (walkers) walkers.update(t);
     },
     walkers,
+  };
+}
+
+/**
+ * A 1 m grid over the island holding the highest roof / spire / wall /
+ * ground in each cell, plus a copy dilated by a few metres so a flying
+ * dragon (about 8 m across) keeps clear of everything.
+ */
+function heightGrid(obstacles, extent = 38, dilate = 4) {
+  const n = extent * 2 + 1;
+  const raw = new Float32Array(n * n);
+  const NONE = -1e6;
+  for (let j = 0; j < n; j++) {
+    for (let i = 0; i < n; i++) {
+      const x = i - extent, z = j - extent;
+      const inside = Math.hypot(x, z) < edgeR(Math.atan2(z, x)) + 0.5;
+      raw[j * n + i] = inside ? topHeight(x, z) + 0.5 : NONE;
+    }
+  }
+  for (const o of obstacles) {
+    const r = Math.ceil(o.r);
+    const ci = Math.round(o.x + extent), cj = Math.round(o.z + extent);
+    for (let dj = -r; dj <= r; dj++) {
+      for (let di = -r; di <= r; di++) {
+        const i = ci + di, j = cj + dj;
+        if (i < 0 || j < 0 || i >= n || j >= n || Math.hypot(di, dj) > o.r + 0.5) continue;
+        raw[j * n + i] = Math.max(raw[j * n + i], o.top);
+      }
+    }
+  }
+  const dil = new Float32Array(n * n).fill(NONE);
+  for (let j = 0; j < n; j++) {
+    for (let i = 0; i < n; i++) {
+      const v = raw[j * n + i];
+      if (v <= NONE) continue;
+      for (let dj = -dilate; dj <= dilate; dj++) {
+        for (let di = -dilate; di <= dilate; di++) {
+          const a = i + di, b = j + dj;
+          if (a < 0 || b < 0 || a >= n || b >= n || di * di + dj * dj > dilate * dilate) continue;
+          if (dil[b * n + a] < v) dil[b * n + a] = v;
+        }
+      }
+    }
+  }
+  return {
+    heightAt(x, z, dilated = true) {
+      const i = Math.round(x + extent), j = Math.round(z + extent);
+      if (i < 0 || j < 0 || i >= n || j >= n) return NONE;
+      return (dilated ? dil : raw)[j * n + i];
+    },
   };
 }
 

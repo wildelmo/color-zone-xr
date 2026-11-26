@@ -328,7 +328,9 @@ export class App {
     }
     this.panel.group.visible = xr;
     this.panel.setVisible('shake', !!this.stage.asset?.shake);
-    this.panel.buttons.find((b) => b.id === 'life').setActive(this.stage.mode === 'life');
+    const lifeBtn = this.panel.buttons.find((b) => b.id === 'life');
+    lifeBtn.setActive(this.stage.mode === 'life');
+    lifeBtn.setLabel(this.stage.lifeLabel);
     this.panel.update(dt);
 
     this.stage.update(dt, this.camera);

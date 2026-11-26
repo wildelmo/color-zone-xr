@@ -55,9 +55,11 @@ export class Shelf {
       kit.track(ring.material);
       ring.position.y = PEDESTAL_H + 0.01;
       g.add(ring);
-      // pick target
-      const proxy = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, 0.75, 12), new THREE.MeshBasicMaterial({ visible: false }));
-      proxy.position.y = PEDESTAL_H + 0.3;
+      // pick target: the curio on top and the whole column under it, since
+      // people point at either
+      const pickH = PEDESTAL_H + 0.675;
+      const proxy = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, pickH, 12), new THREE.MeshBasicMaterial({ visible: false }));
+      proxy.position.y = pickH / 2;
       proxy.name = `proxy:shelf:${entry.id}`;
       g.add(proxy);
       const holder = new THREE.Group();
