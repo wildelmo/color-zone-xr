@@ -136,7 +136,7 @@ export class Stage {
   setLife(on, instant = false) {
     const app = this.app;
     if (!this.asset) return;
-    const L = this.asset.info.life || { floor: 0, viewer: [0, 6], yaw: 0 };
+    const L = this.asset.life || this.asset.info.life || { floor: 0, viewer: [0, 6], yaw: 0 };
     if (on && this.mode !== 'life') {
       this.mode = 'life';
       app.hall.setFurnitureVisible(false);

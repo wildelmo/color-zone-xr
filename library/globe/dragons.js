@@ -92,7 +92,7 @@ export async function buildDragons(ctx, kit, { lod, perches }) {
   const randomWaypoint = (d) => {
     for (let k = 0; k < 20; k++) {
       const a = rnd() * Math.PI * 2;
-      const r = 14 + rnd() * 22;
+      const r = 12 + rnd() * 26;
       const y = G.islandY + 12 + rnd() * 26;
       const p = new THREE.Vector3(Math.cos(a) * r, y, Math.sin(a) * r);
       if (p.distanceTo(new THREE.Vector3(0, G.globeY, 0)) < G.globeR - 9 && (!d || p.distanceTo(d.pos) > 12)) return p;
@@ -166,7 +166,7 @@ export async function buildDragons(ctx, kit, { lod, perches }) {
     const r = fromC.length();
     if (r > G.globeR - 12) desired.addScaledVector(fromC.normalize(), -(r - (G.globeR - 12)) * 0.5);
     const rh = Math.hypot(d.pos.x, d.pos.z);
-    if (rh < 31 && d.pos.y < G.islandY + 14 && d.state === 'fly') desired.y += (G.islandY + 14 - d.pos.y) * 0.4;
+    if (rh < G.edgeR + 4 && d.pos.y < G.islandY + 14 && d.state === 'fly') desired.y += (G.islandY + 14 - d.pos.y) * 0.4;
     if (rh < 6 && d.pos.y < G.islandY + 36 && d.state === 'fly') desired.addScaledVector(new THREE.Vector3(d.pos.x, 0, d.pos.z).normalize(), 2);
   }
 

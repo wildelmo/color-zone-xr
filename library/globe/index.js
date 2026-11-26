@@ -15,14 +15,15 @@ import { buildSnow } from './snow.js';
 import { SCORE } from './score.js';
 
 const ROCK = new URL('./islandModel.js', import.meta.url).href;
-const plaza = { x: Math.cos(T.gateA) * 19.8, z: Math.sin(T.gateA) * 19.8 };
+// the open market square just inside the gate, between the gatehouse and the well
+const plaza = { x: Math.cos(T.gateA) * 22.7, z: Math.sin(T.gateA) * 22.7 };
 
 export const info = {
   id: 'globe',
   name: 'Le Royaume de Givre',
   maker: 'A crystal snow globe, carved from the winter itself',
   blurb:
-    'A floating island kingdom inside a crystal globe: a walled castle town of a hundred little houses, waterfalls spilling into mist, and two small dragons who fly, perch and puff smoke. Shake it to make it snow. Wind the key crystal for the lullaby and the aurora.',
+    'A floating island kingdom inside a crystal globe: a walled castle town of some forty houses, a keep and a cathedral, waterfalls spilling into mist, and two small dragons who fly, perch and puff smoke. Shake it to make it snow. Wind the key crystal for the lullaby and the aurora.',
   scale: 1 / 240, // about 43 cm across on the table
   bounds: { center: [0, 62, 0], radius: 64 },
   life: {
@@ -287,6 +288,11 @@ export async function createGlobe(ctx, { lod = 'hero' } = {}) {
     interactions,
     timeline,
     stats: { houses: town.houses },
+    debug: { dragons: dragons.dragons, perches, snow },
+    // stand on the bridge over the river at life size (computed with the town)
+    life: town.viewpoint
+      ? { ...info.life, floor: G.islandY + town.viewpoint.y, viewer: [town.viewpoint.x, town.viewpoint.z], yaw: town.viewpoint.yaw }
+      : info.life,
     update,
     assemble() {
       timeline.play();

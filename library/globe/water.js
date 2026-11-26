@@ -51,7 +51,7 @@ export function buildWater(kit, { lod }) {
   // the ravine river: a ribbon along the channel floor out to the cliff
   const addRiver = (angle, width, depth) => {
     const pts = [];
-    const r0 = angle === T.ravineA ? T.tr[0] - 1 : 19.5;
+    const r0 = angle === T.ravineA ? T.tr[0] - 1 : T.edge - 7.5;
     const r1 = edgeR(angle) + 0.4;
     const n = 24;
     for (let i = 0; i <= n; i++) {

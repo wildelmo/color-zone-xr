@@ -89,6 +89,7 @@ export function buildTown(kit, uniforms, { lod = 'hero', seed = 11 } = {}) {
   const orderOf = (x, z) => Math.min(0.85, Math.hypot(x - hill.x, z - hill.y) / maxR);
   const perches = [];
   const lanterns = [];
+  let viewpoint = null;
 
   // ------------------------------------------------------------ helpers
   /** a façade wall from (x0,z0) to (x1,z1) at base y, floors, tiles per bay */
@@ -160,53 +161,54 @@ export function buildTown(kit, uniforms, { lod = 'hero', seed = 11 } = {}) {
   const blocked = (x, z, rad) => {
     const r = Math.hypot(x, z);
     const a = Math.atan2(z, x);
-    if (r + rad > edgeR(a) - 3.2) return true; // inside the outer wall
+    if (r + rad > edgeR(a) - 2.75) return true; // backing right up to the outer wall
     // ravine and streams
     if (angDist(a, T.ravineA) * r < T.ravineW + rad + 1.4 && r > T.tr[0] - 4) return true;
-    for (const sa of T.streams) if (angDist(a, sa) * r < rad + 1.6 && r > 18) return true;
+    for (const sa of T.streams) if (angDist(a, sa) * r < rad + 1.6 && r > T.edge - 9) return true;
     // lanes (around the hill centre)
     const ah = Math.atan2(z - hill.y, x - hill.x);
     const rh = Math.hypot(x - hill.x, z - hill.y);
     for (const l of STREETS.lanes) if (angDist(ah, l.a) * rh < rad + l.w * 0.5 + 0.4 && rh > l.r0) return true;
     // gate plaza and the cathedral / windmill plots
-    const g = new THREE.Vector2(Math.cos(T.gateA) * 21.5, Math.sin(T.gateA) * 21.5);
+    const g = new THREE.Vector2(Math.cos(T.gateA) * (T.edge - 5.5), Math.sin(T.gateA) * (T.edge - 5.5));
     if (g.distanceTo(new THREE.Vector2(x, z)) < 4.2 + rad) return true;
     for (const [px, pz, pr] of plots) if (Math.hypot(x - px, z - pz) < pr + rad) return true;
     return false;
   };
   // plots reserved for landmarks: [x, z, radius]
   const cathA = T.lanes[1] + 0.42;
-  const cath = new THREE.Vector2(hill.x + Math.cos(cathA) * 13.2, hill.y + Math.sin(cathA) * 13.2);
+  const cath = new THREE.Vector2(hill.x + Math.cos(cathA) * 15.2, hill.y + Math.sin(cathA) * 15.2);
   const millA = T.streams[1] + 0.32;
-  const mill = new THREE.Vector2(Math.cos(millA) * 20.3, Math.sin(millA) * 20.3);
+  const mill = new THREE.Vector2(Math.cos(millA) * (T.edge - 6.5), Math.sin(millA) * (T.edge - 6.5));
   const plots = [
     [cath.x, cath.y, 7.2],
     [mill.x, mill.y, 3.4],
   ];
 
-  for (const ring of STREETS.rings) {
-    for (const side of [-1, 1]) {
-      let a = rnd() * 0.3;
-      const gap = 0.35;
-      while (a < Math.PI * 2) {
-        const w = 3.2 + rnd() * 2.2, d = 3.6 + rnd() * 1.6;
-        const rr = ring.r + side * (ring.w / 2 + d / 2 + 0.25);
-        const da = (w + gap) / rr;
-        const ac = a + da / 2;
-        const x = hill.x + Math.cos(ac) * rr, z = hill.y + Math.sin(ac) * rr;
-        const t = terraceOf(x, z);
-        const okTerrace = t === ring.terrace || (side < 0 && t === ring.terrace + 1 && false);
-        if (okTerrace && !blocked(x, z, Math.max(w, d) * 0.55)) {
-          houses.push({ x, z, a: ac, w, d, facing: side < 0 ? 1 : -1, t });
-        }
-        a += da;
+  // rows of houses around the hill, each facing the street (or back lane) inside it
+  const overlaps = (x, z, rad) => houses.some((h) => Math.hypot(h.x - x, h.z - z) < (rad + Math.max(h.w, h.d) * 0.5) * 0.92);
+  for (const row of STREETS.rows) {
+    const cx = row.center === 'island' ? 0 : hill.x, cz = row.center === 'island' ? 0 : hill.y;
+    let a = rnd() * 0.2;
+    while (a < Math.PI * 2) {
+      const w = 2.9 + rnd() * 1.9;
+      const d = row.depth[0] + rnd() * (row.depth[1] - row.depth[0]);
+      const da = (w + 0.3 + rnd() * 0.3) / row.r;
+      const ac = a + da / 2;
+      const x = cx + Math.cos(ac) * row.r, z = cz + Math.sin(ac) * row.r;
+      const rad = Math.max(w, d) * 0.5;
+      if (terraceOf(x, z) === row.terrace && !blocked(x, z, rad) && !overlaps(x, z, rad)) {
+        // face the hill (where the streets are)
+        const toHill = Math.atan2(hill.y - z, hill.x - x);
+        houses.push({ x, z, a: toHill + Math.PI, w, d, facing: -1, t: row.terrace });
       }
+      a += da;
     }
   }
   // a few cottages crowding the castle hill
   for (let i = 0; i < 9; i++) {
     const ac = (i / 9) * Math.PI * 2 + 0.3;
-    const rr = 7.6 + rnd() * 1.2;
+    const rr = 8.4 + rnd() * 1.4;
     const x = hill.x + Math.cos(ac) * rr, z = hill.y + Math.sin(ac) * rr;
     if (!blocked(x, z, 2)) houses.push({ x, z, a: ac, w: 3 + rnd(), d: 3.2 + rnd(), facing: -1, t: 2 });
   }
@@ -218,7 +220,7 @@ export function buildTown(kit, uniforms, { lod = 'hero', seed = 11 } = {}) {
     const build = [orderOf(h.x, h.z), y];
     const lit = 0.15 + rnd() * 0.8;
     // local frame: +z faces the street
-    const yaw = Math.atan2(Math.cos(h.a), Math.sin(h.a)) * 1 + (h.facing > 0 ? 0 : Math.PI);
+    const yaw = Math.atan2(Math.cos(h.a), Math.sin(h.a)) + (h.facing > 0 ? 0 : Math.PI);
     const m = mat(h.x, y, h.z, 0, yaw);
     const w = h.w, d = h.d;
     const height = 3.1 + (floors - 1) * 2.8;
@@ -508,8 +510,13 @@ export function buildTown(kit, uniforms, { lod = 'hero', seed = 11 } = {}) {
     const arch = new THREE.TorusGeometry(2.6, 0.45, 6, 16, Math.PI);
     bag.add(arch, bm.clone().multiply(mat(0, -2.4, 0, 0, Math.PI / 2)), 'stone', '#968f84', { build, lit: 2 });
     lanterns.push(new THREE.Vector3(1.0, 1.6, 3.6).applyMatrix4(bm), new THREE.Vector3(-1.0, 1.6, -3.6).applyMatrix4(bm));
+    // the best place to stand at life size: on the bridge, the river below, the keep ahead
+    // face along the street (the bridge deck), houses and lanterns either side
+    const bp = new THREE.Vector3(0, 0.4, 1.6).applyMatrix4(bm);
+    const along = new THREE.Vector3(0, 0, 1).transformDirection(bm);
+    viewpoint = { x: bp.x, y: bp.y, z: bp.z, yaw: Math.atan2(-along.x, -along.z) };
     // market well in the gate plaza
-    const gx = Math.cos(T.gateA) * 20.8, gz = Math.sin(T.gateA) * 20.8;
+    const gx = Math.cos(T.gateA) * (T.edge - 6.4), gz = Math.sin(T.gateA) * (T.edge - 6.4);
     const wy = topHeight(gx, gz);
     const wb = [orderOf(gx, gz), wy];
     bag.add(new THREE.CylinderGeometry(0.9, 0.95, 0.9, 14, 1, true), mat(gx, wy + 0.45, gz), 'stone', '#a8a196', { build: wb, lit: 2 });
@@ -578,6 +585,7 @@ export function buildTown(kit, uniforms, { lod = 'hero', seed = 11 } = {}) {
     group,
     perches,
     lanterns,
+    viewpoint,
     houses: houses.length,
     update(t, dt, speed) {
       if (sails) sails.rotation.z -= dt * (0.4 + speed * 0.8);

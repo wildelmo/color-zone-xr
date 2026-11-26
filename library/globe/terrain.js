@@ -11,8 +11,7 @@ export const T = {
   t: G.terrace,
   tr: G.terraceR,
   hill: G.hill,
-  wallR: 24.2, // outer town wall
-  innerWallR: 16.2, // wall along the top of the first step
+  innerWallR: 18.3, // wall along the top of the first step
   ravineA: 0.55, // angle (rad) of the river ravine
   ravineW: 2.6,
   streams: [2.55, 4.4], // angles of the two small streams/waterfalls
@@ -42,7 +41,7 @@ export function smooth01(e0, e1, x) {
 
 /** irregular cliff radius at angle a */
 export function edgeR(a) {
-  return T.edge + 2.2 * Math.sin(3 * a + 1.1) + 1.2 * Math.sin(7 * a + 0.4) + 0.6 * Math.sin(13 * a);
+  return T.edge + 1.5 * Math.sin(3 * a + 1.1) + 0.8 * Math.sin(7 * a + 0.4) + 0.45 * Math.sin(13 * a);
 }
 
 /** angular distance */
@@ -65,9 +64,9 @@ export function channel(x, z) {
   }
   // shallow streams to the two small falls
   for (const sa of T.streams) {
-    if (r > 19) {
+    if (r > T.edge - 8) {
       const across = Math.abs(Math.sin(a - sa)) * r;
-      if (Math.cos(a - sa) > 0) cut = Math.max(cut, (1 - smooth01(0.5, 1.4, across)) * 0.7 * smooth01(19, 21, r));
+      if (Math.cos(a - sa) > 0) cut = Math.max(cut, (1 - smooth01(0.5, 1.4, across)) * 0.7 * smooth01(T.edge - 8, T.edge - 6, r));
     }
   }
   return cut;
@@ -114,7 +113,7 @@ export const SPIKES = (() => {
   };
   for (let i = 0; i < 26; i++) {
     const a = rnd() * Math.PI * 2;
-    const r = Math.sqrt(rnd()) * 20;
+    const r = Math.sqrt(rnd()) * 24;
     out.push([Math.cos(a) * r, Math.sin(a) * r, 3 + rnd() * 7 * (1 - r / 26), 1 + rnd() * 1.6]);
   }
   return out;
@@ -122,11 +121,18 @@ export const SPIKES = (() => {
 
 /** the street plan: ring streets on each terrace and lanes climbing between them */
 export const STREETS = {
+  // ring streets run along the foot of each step (hill-centred radii)
   rings: [
-    { r: 20.6, w: 1.7, terrace: 0 },
-    { r: 13.2, w: 1.5, terrace: 1 },
+    { r: 20.1, w: 1.7, terrace: 0 },
+    { r: 12.45, w: 1.5, terrace: 1 },
   ],
-  lanes: T.lanes.map((a) => ({ a, r0: T.tr[1] - 1, r1: T.wallR + 0.5, w: 1.4 })),
+  // rows of houses: radius of the row's centre (they face the street inside them)
+  rows: [
+    { r: 22.75, terrace: 0, depth: [3.2, 3.9] },
+    { r: T.edge - 5.3, terrace: 0, depth: [3.0, 3.5], center: 'island' }, // backing onto the town wall
+    { r: 15.4, terrace: 1, depth: [3.2, 4.0] },
+  ],
+  lanes: T.lanes.map((a) => ({ a, r0: T.tr[1] - 1, r1: T.edge, w: 1.4 })),
 };
 
 /** 1 on a cobbled street, 0 elsewhere (soft edge) */
@@ -144,7 +150,7 @@ export function streetMask(x, z) {
   }
   // plaza inside the gate
   const ga = T.gateA;
-  const gx = Math.cos(ga) * 21.5 + 0, gz = Math.sin(ga) * 21.5;
+  const gx = Math.cos(ga) * (T.edge - 5.5), gz = Math.sin(ga) * (T.edge - 5.5);
   m = Math.max(m, 1 - smooth01(3.0, 3.6, Math.hypot(x - gx, z - gz)));
   return m;
 }

@@ -13,10 +13,10 @@ export const G = {
   floorY: 31.5,
   // the floating island: y of its lowest town terrace
   islandY: 64,
-  edgeR: 27, // average cliff radius
+  edgeR: 31, // average cliff radius
   terrace: [0, 3.6, 7.4], // heights of the three terraces above islandY
-  terraceR: [17, 10], // radii of the steps up to terraces 2 and 3
-  hill: [-2.5, -1.5], // x, z offset of the castle hill
+  terraceR: [19, 11.5], // radii of the steps up to terraces 2 and 3
+  hill: [-2.8, -1.8], // x, z offset of the castle hill
 };
 
 G.floorR = Math.sqrt(G.globeR * G.globeR - (G.globeY - G.floorY) ** 2);
