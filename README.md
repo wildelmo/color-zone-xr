@@ -1,69 +1,130 @@
-# Sea Train
+<h1 align="center">The Curio Cabinet</h1>
+<p align="center"><strong>A WebXR gallery of intricate little machines.</strong><br/>
+Pick a curio from the shelf, hold it in your hands, wind it up, and step inside it.</p>
 
-A WebXR ride across a painted sea. You sit in an old train car and glide over
-shallow water under a huge Ghibli-blue sky, with towering cumulus clouds and a
-small island drifting past. It should look like an animated film, not like real life.
+<p align="center">
+  <img src="docs/screenshots/11-vr-holding.png" width="49%" alt="Holding the carousel up close in VR" />
+  <img src="docs/screenshots/12-vr-life-size.png" width="49%" alt="Standing inside the carousel at life size, crankshafts turning overhead" />
+</p>
 
-The previous project, Color Zone XR, is kept in [`archive/`](archive/).
+The Curio Cabinet is two things:
 
-![Looking ahead](docs/screenshots/seaTrain-ahead.png)
+1. **A reusable 3D asset library** (`library/`) of highly detailed, animated, procedurally built objects for VR projects. Every asset is code: no model files, no textures to download. Each one comes in a cheap **shelf** version and a full-detail **hero** version.
+2. **A WebXR viewer** (`src/`), a dim, warm gallery for Meta Quest. Low-detail previews sit on pedestals. Point at one and the full-detail version is built, assembles itself on the display table, and is yours to pick up, turn over, wind, scale with two hands, or blow up to life size and walk through.
 
-## Run it
+## The first curio: *Le Grand Carrousel*
 
-```sh
+An antique clockwork music-box carousel ("Atelier Merveille, Paris, c. 1898", imagined). About half a metre across on the table, 11 m across at life size.
+
+<p align="center">
+  <img src="docs/screenshots/04-horses-close.png" width="49%" alt="Carved horses on barley-twist poles" />
+  <img src="docs/screenshots/06-under-canopy.png" width="49%" alt="Under the canopy: crankshafts, bearings, the crown gear and pinions" />
+</p>
+<p align="center">
+  <img src="docs/screenshots/05-music-movement.png" width="49%" alt="The music-box movement seen through the base window" />
+  <img src="docs/screenshots/07-band-organ.png" width="49%" alt="The band organ with its drummers and bandmaster" />
+</p>
+
+- **24 carved horses.** Each is sculpted from signed distance fields (smooth-blended capsules and ellipsoids) and meshed with Surface Nets in a Web Worker. They wear gilded straps, ruby and sapphire jewels, scalloped saddle blankets and flowing manes. Each has its own livery, and the outward "romance side" carries the extra trim.
+- **A working mechanism.** Twelve crankshafts hang under the canopy. Each has a pinion that rolls round a stationary crown gear, so every shaft turns 5.17 times per revolution. Each horse rides a slider-crank with a real connecting rod, and the heights you see are computed from that geometry.
+- **A real music box.** You can see a pinned brass cylinder and a steel comb through the curved glass window in the base. The pins are placed from the score of an original waltz, *Valse du Carrousel*, so each comb tooth you see quiver is the note you hear. A spring barrel turns and a governor fan spins.
+- **A clockwork spring.** Turn the brass key to wind it. The ratchet clicks, and you feel it through the controller. The carousel spins up with flywheel inertia, then slows and the tune drags as the spring runs down.
+- **A band organ** with brass pipes, drums, two drummer automata and a bandmaster beating 3/4 time.
+- **Antique finish.** Mahogany plinth, bead mouldings, mirrored and hand-painted rounding boards, a scalloped valance with gold tassels, gilded filigree cresting, a striped tent roof, a sunburst ceiling, a cupola, a waving pennant, and about 230 incandescent bulbs running chase patterns.
+- **A self-assembly show** when it's brought to the table. The base rises, the deck spins down, poles shoot up, horses drop onto them one by one, the canopy lowers, and the lights come on in a wave.
+
+<p align="center">
+  <img src="docs/screenshots/02-assembling.png" width="32%" alt="Assembling: horses dropping onto their poles" />
+  <img src="docs/screenshots/03-desktop.png" width="32%" alt="On the display table" />
+  <img src="docs/screenshots/13-vr-shelf.png" width="32%" alt="The shelf of curios, some still under dust cloths" />
+</p>
+
+## Try it
+
+**On a Meta Quest (2, 3, 3S, Pro):** open the published page in the Quest browser and press **Enter VR**. When GitHub Pages is enabled for this repository (Settings → Pages → *GitHub Actions*), the `Deploy to GitHub Pages` workflow publishes `main`.
+
+**Locally:**
+
+```bash
 npm install
-npm start          # http://localhost:8080 on desktop (drag to look around)
-                   # https://<LAN-ip>:8443 on a Quest (accept the certificate warning once)
-npm run shot       # screenshots from six directions -> docs/screenshots/
-npm run shot -- --frames=48 --travel=900   # frames of the ride, for checking parallax
-npm test           # exit and pause behaviour in an emulated Quest
+npm start          # http://localhost:8080 for desktop, https://<LAN-ip>:8443 for the Quest
 ```
 
-## Leaving the ride
+The headset needs HTTPS for WebXR. The dev server makes a self-signed certificate with `openssl`, and you accept the warning once.
 
-- **In VR:** hold **B** or **Y** for 1.5 seconds. A ring fills up in front of you; letting go cancels.
-- **On the page:** the **Quit** button.
+### Controls
 
-Quitting really stops everything. It ends the VR session, stops rendering, runs
-every module's shutdown hook (sound will be closed there), frees the GPU and
-destroys the WebGL context. Then it moves the tab to a static `ended.html`
-page, so none of the app's code is left running or holding memory. A web page
-can't close its own tab, so this is the closest thing to closing it.
+| | VR (Touch controllers) | Desktop |
+|---|---|---|
+| Bring a curio to the table | point at its pedestal + **trigger** | click the pedestal |
+| Wind the spring | **trigger** on the brass key, or hold **A/X** | hold the key, the *Hold to wind* button, or **W** |
+| Pick it up | **grip** (near it or pointing at it) | – |
+| Scale and turn | **both grips**, pull apart or together | scroll to zoom right into the gears |
+| Put it back | **B/Y** or the *Reset* button | **R** |
+| Life size | the *Life size* button | the button or **L** |
+| Move | left stick walks, right stick snap-turns | drag to orbit |
 
-Leaving VR any other way (the Quest menu, taking the headset off) **pauses**:
-nothing runs until you choose Back to VR, Watch here or Quit. A hidden tab pauses too.
+URL options: `?instant` skips the assembly show, `?asset=carousel` picks what loads first, `?empty` starts with an empty table.
 
-`npm test` checks all of this in an emulated Quest (see `tools/test/exit.mjs`).
-Every new module that starts something outside the render loop (audio, timers,
-workers) must register pause and shutdown hooks with `src/lifecycle.js`.
+## How it stays fast on a headset
 
-## Palettes
+The Quest is a mobile GPU, so the detail is spent where you're looking:
 
-Add `?palette=summer` or `?palette=castle` to the URL to try another palette.
-The default is `seaTrain`.
+- **Shelf vs hero.** The gallery only ever holds cheap shelf builds plus one hero. Picking another curio disposes the current hero's geometries, materials and textures (the test checks that GPU memory is actually freed) before the next one is built.
+- **Builds never drop frames.** Heavy work is time-sliced (`Frames.step()`, about 6 ms per frame, and this works inside WebXR where `requestAnimationFrame` stops). SDF meshing runs in a worker. Textures are uploaded and shaders compiled before anything appears.
+- **Few draw calls.** `GeoBag` merges every moulding, bolt and trim into one mesh per material. Horses, poles, rods, crankshafts, comb teeth and bulbs are `InstancedMesh`es. The whole hero is about 75 draw calls.
+- **Per-horse level of detail.** Each horse layer has a high- and a low-detail instanced mesh, and every frame the nearest few horses you're looking at get the full sculpt.
+- **Painted, not modelled.** The saddle blankets are painted onto the body in the shader from a per-vertex distance field, which gives crisp scallops and a gold pinstripe without extra geometry.
+- **Cheap lighting.** One spotlight with a shadow follows the hero and is re-fitted to its bounds every frame. Bulb glows are additive billboards, with no lights and no post-processing.
 
-There is no build step: plain ES modules plus a copy of Three.js (r185) in `vendor/three`.
-Pushing to `main` deploys the site to GitHub Pages.
+## The library
 
-## Palette
+```
+library/
+  index.js              the catalogue (lazy-loaded entries, "coming soon" placeholders)
+  core/
+    sdf.js              SDF primitives: smooth union, round cones, chains, contours
+    surfaceNets.js      SDF -> smooth indexed mesh (pure JS, runs in a worker)
+    sdfWorker.js        worker that meshes model layers off the main thread
+    sdfClient.js        worker client + inline fallback -> BufferGeometry
+    geometry.js         GeoBag merging, lathes, gears, crown gears, twisted poles,
+                        tapered tubes, filigree cresting, bending panels onto cylinders
+    materials.js        antique palette, MaterialKit (tracks + disposes), paint-mask shader
+    bulbs.js            strings of bulbs with chase patterns and glow billboards
+    textures.js         procedural canvas textures (wood, wear, lettering)
+    asset.js            the asset contract: Emitter, Timeline (assembly scripts), easing
+  carousel/
+    index.js            createCarousel(ctx, { lod }): state, spring, music, assembly
+    horseModel.js       the carved horse as SDF layers (+ straps, gems, eyes)
+    horses.js           24 instanced horses with LOD, poles and crank rods
+    plinth.js           the base, the window and music movement, the winding key
+    column.js           the mirrored centre column, crown gear, band organ, automata
+    rotor.js            the deck, sweeps, crankshafts, rounding boards, roof, cupola, flag
+    paintings.js        the hand-"painted" panels, roof, ceiling and deck
+    score.js            Valse du Carrousel (also places the cylinder pins)
+    dimensions.js       every mechanical dimension in one place
+```
 
-All colors live in [`src/palette.js`](src/palette.js). They were sampled from
-reference stills, and each value is tagged with the still it came from.
-The stills themselves are copyrighted, so they stay out of the repo: put local
-copies in `reference/`, which git ignores.
+### Adding a curio
 
-## Modules
+1. Make `library/<name>/index.js` exporting `info` (`name`, `maker`, `blurb`, `scale`, `bounds`) and `async create<Name>(ctx, { lod })`. It returns `{ root, update(dt, view), interactions, events, assemble?, skipAssembly?, wind?, dispose }`. See the contract in `library/core/asset.js`.
+2. Build in life-size metres. The viewer applies `info.scale` for the toy view and uses scale 1 for *Life size*.
+3. Call `await ctx.step()` between expensive pieces, and `ctx.progress(f, label)` to report.
+4. Add an entry to `library/index.js`. The shelf, loader, grab, scale, audio and spotlight all work automatically.
 
-Each module is a working build you can open in the headset before the next one is added.
+The `dev/` pages are a small lab for sculpting. `dev/horse.html?yaw=0` renders the horse model alone, and `dev/carousel.html` renders a whole asset with no gallery around it.
 
-| # | Module | Status |
-|---|--------|--------|
-| 0 | Groundwork: Three.js + WebXR, dev server, Pages deploy | done |
-| 1 | Palette sampled from reference stills, with switchable presets | done |
-| 2 | Sky: painted gradient dome; cumulus painted on the GPU as lit volumes, arranged in four parallax layers (far, mid, near, overhead) | in progress |
-| 3 | Water: sun glitter painted as dabs, ripples, cloud reflections | placeholder only |
-| 4 | Motion: the world slides past at a gentle train speed (`?speed=<m/s>`, default 14) | first pass |
-| 5 | Distant scenery: island with houses, poles, far shoreline in haze | |
-| 6 | Train car: red seats, wood window frames, hand rings, sway | |
-| 7 | Painterly finish: soft edges, paper grain, color grading | |
-| 8 | Sound: train rhythm, wind, ambience | |
+## Tests
+
+```bash
+npm run lint
+npm test           # headless Chromium: desktop run, then an emulated Quest with two Touch controllers
+```
+
+The test boots the gallery and plays through the real interactions: the assembly, winding with the keyboard and with a laser on the key (including haptic clicks), the music box playing, grabbing it and lifting it to the face, the two-handed stretch, putting it back, life size and walking, putting it away (checking GPU memory is freed), and bringing it back from the shelf. It also writes the screenshots in `docs/screenshots`.
+
+## What's next
+
+The shelf already has dust cloths over a **brass orrery**, a **clockwork city** that builds itself (traffic, day and night, windows lighting up), a **singing bird box** and a **lighthouse** with waves and a turning lamp. Other ideas: a steam train on a figure-eight, a Ferris wheel, a marble run, a snow globe you shake, an aquarium, and a cuckoo clock.
+
+*Earlier projects in this repository (Color Zone XR, a WebXR painting playground, and Sea Train, a ride across a painted sea) are in the git history on `main`.*

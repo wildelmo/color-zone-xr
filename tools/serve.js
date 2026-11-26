@@ -1,5 +1,5 @@
 /**
- * Local dev server for Sea Train.
+ * Local dev server for The Curio Cabinet.
  *
  *   npm start            → http://localhost:8080  (desktop preview)
  *                          https://<your-LAN-ip>:8443 (Meta Quest browser)
@@ -52,7 +52,7 @@ function lanAddresses() {
 }
 
 function selfSignedCert() {
-  const dir = path.join(os.tmpdir(), 'sea-train-cert');
+  const dir = path.join(os.tmpdir(), 'curio-cabinet-cert');
   const key = path.join(dir, 'key.pem');
   const cert = path.join(dir, 'cert.pem');
   if (!fs.existsSync(key) || !fs.existsSync(cert)) {
@@ -67,7 +67,7 @@ function selfSignedCert() {
 }
 
 http.createServer(handler).listen(HTTP_PORT, () => {
-  console.log(`\n  Sea Train\n  desktop preview → http://localhost:${HTTP_PORT}`);
+  console.log(`\n  The Curio Cabinet\n  desktop preview → http://localhost:${HTTP_PORT}`);
 });
 const tls = selfSignedCert();
 if (tls) {
