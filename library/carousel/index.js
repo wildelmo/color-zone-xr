@@ -189,7 +189,10 @@ export async function createCarousel(ctx, { lod = 'hero' } = {}) {
     state.wind = Math.max(0, state.wind - (state.speed * dt) / RUN_SECONDS);
 
     state.angle += state.speed * OMEGA * dt;
-    state.crank = state.angle * D.ratio;
+    // each pinion rolls on top of the fixed crown gear: its lowest tooth must
+    // stand still, so as the deck turns anticlockwise (seen from above) the
+    // shaft spins backwards about its outward axis, ratio times as fast
+    state.crank = -state.angle * D.ratio;
     rotor.rotation.y = state.angle;
 
     // the music box: advance the cylinder, pluck what passes the comb

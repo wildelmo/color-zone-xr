@@ -286,7 +286,7 @@ function buildMovement(kit, shared) {
     update(state) {
       const ang = (state.musicBeat / SCORE.length) * Math.PI * 2;
       cylinder.rotation.x = ang;
-      gearL.rotation.x = -ang * (0.16 / 0.12);
+      gearL.rotation.x = ang; // mounted on the cylinder's own arbor
       barrelGear.rotation.x = -ang * (0.16 / 0.24) + state.windAngle * 0.15;
       flyAngle += state.speed * 0.9;
       fly.rotation.y = flyAngle;

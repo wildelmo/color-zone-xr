@@ -20,6 +20,13 @@ app.onHeroUnloaded = () => app.card.set(null);
 // the HTML toolbar is for desktop only; hide it while the headset is on
 app.onModeChange = (mode) => $('hud').classList.toggle('hidden', mode === 'xr');
 
+// a real exit: the app has stopped (VR ended, audio closed, no rendering)
+app.onExit = () => {
+  $('overlay').classList.add('hidden');
+  $('hud').classList.add('hidden');
+  $('closed').classList.remove('hidden');
+};
+
 function showHud() {
   $('overlay').classList.add('hidden');
   $('hud').classList.remove('hidden');
@@ -60,6 +67,8 @@ windBtn.addEventListener('pointerdown', startWind);
 windBtn.addEventListener('pointerup', stopWind);
 windBtn.addEventListener('pointerleave', stopWind);
 $('hud-life').addEventListener('click', () => app.toggleLife());
+$('hud-exit').addEventListener('click', () => app.exit());
+$('btn-reopen').addEventListener('click', () => location.reload());
 $('hud-reset').addEventListener('click', () => app.stage.reset());
 $('hud-mute').addEventListener('click', (e) => {
   app.audio.setMuted(!app.audio.muted);

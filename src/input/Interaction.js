@@ -136,9 +136,22 @@ export class Interaction {
         ptr.windingButton.onEnd?.();
         ptr.windingButton = null;
       }
-      if (hs.secondaryPressed) {
-        app.audio.ui('click');
-        stage.reset();
+      // B/Y: tap to put it back on the table, hold to exit
+      if (hs.secondary) {
+        const before = ptr.bHeld || 0;
+        ptr.bHeld = before + dt;
+        if (ptr.bHeld > 0.4 && Math.floor(ptr.bHeld * 5) !== Math.floor(before * 5)) hs.pulse(0.1 + Math.min(0.6, ptr.bHeld * 0.4), 20);
+        if (ptr.bHeld > 0.4 && before <= 0.4) app.onStatus?.('Keep holding to exit…');
+        if (ptr.bHeld >= 1.5 && before < 1.5) {
+          hs.pulse(1, 80);
+          app.exit();
+        }
+      } else if (ptr.bHeld) {
+        if (ptr.bHeld < 0.4) {
+          app.audio.ui('click');
+          stage.reset();
+        }
+        ptr.bHeld = 0;
       }
 
       // grip: pick up the hero (near the hand, or pointed at)

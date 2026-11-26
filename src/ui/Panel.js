@@ -187,7 +187,7 @@ export class InfoCard {
       ['Trigger', 'point at a pedestal to bring a curio to the table; press buttons; hold on the key to wind it'],
       ['Grip', 'pick it up. Grab with both hands and pull apart to make it bigger'],
       ['A / X', 'hold to wind the spring'],
-      ['B / Y', 'put it back on the table'],
+      ['B / Y', 'tap to put it back on the table; hold to exit'],
       ['Sticks', 'left to walk, right to turn'],
     ];
     for (const [k, v] of lines) {

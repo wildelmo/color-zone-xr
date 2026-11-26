@@ -94,16 +94,26 @@ function bodyRaw(x, y, z) {
 
 // ------------------------------------------------------- mane, forelock, tail
 const crest = [[0.685, 0.82, 0], [0.64, 0.74, 0], [0.585, 0.66, 0], [0.53, 0.575, 0], [0.475, 0.49, 0], [0.42, 0.41, 0], [0.365, 0.34, 0], [0.31, 0.29, 0]];
-const locks = crest.map((c, i) => {
-  const s = 1 - i / (crest.length + 2);
-  const sway = i % 2 ? 0.02 : -0.01;
-  return chain(
-    [c, [c[0] - 0.045, c[1] - 0.025, 0.085 * s + 0.03], [c[0] - 0.075 + sway, c[1] - 0.12 * s - 0.02, 0.11 * s + 0.045], [c[0] - 0.07 + sway * 2, c[1] - 0.2 * s - 0.03, 0.09 * s + 0.05]],
-    [0.05, 0.046, 0.032, 0.008],
-    0.01,
-    3,
-  );
-});
+/**
+ * Carved locks falling from the crest down one side of the neck.
+ * side +1 is the outward "romance side" (fuller); side -1 is the inner side,
+ * a little shorter and set between the outer locks so it isn't a mirror copy.
+ */
+function makeLocks(points, side, len) {
+  return points.map((c, i) => {
+    const s = (1 - i / (crest.length + 2)) * len;
+    const sway = i % 2 ? 0.02 : -0.01;
+    const z = (v) => side * v;
+    return chain(
+      [c, [c[0] - 0.045, c[1] - 0.025, z(0.085 * s + 0.03)], [c[0] - 0.075 + sway, c[1] - 0.12 * s - 0.02, z(0.11 * s + 0.045)], [c[0] - 0.07 + sway * 2, c[1] - 0.2 * s - 0.03, z(0.09 * s + 0.05)]],
+      [0.05, 0.046, 0.032, 0.008],
+      0.01,
+      3,
+    );
+  });
+}
+const between = crest.slice(0, -1).map((c, i) => c.map((v, k) => (v + crest[i + 1][k]) / 2));
+const locks = [...makeLocks(crest, 1, 1), ...makeLocks(between, -1, 0.82)];
 const crestRidge = chain(crest, [0.045, 0.05, 0.05, 0.05, 0.045, 0.04, 0.035, 0.025], 0.02, 2);
 const forelock = chain([[0.705, 0.82, 0], [0.765, 0.8, 0.02], [0.8, 0.74, 0.03], [0.815, 0.69, 0.02]], [0.034, 0.03, 0.02, 0.006], 0.01, 3);
 const tailLocks = [
@@ -191,7 +201,7 @@ export const layers = {
   // `paint` carries the blanket region's distance so the shader can paint a
   // crisp scalloped blanket (and a gold pinstripe) at sub-vertex precision
   body: { sdf: shifted(bodyRaw), bounds: B, color: (x, y, z) => bodyColor(x - OX, y, z), attributes: { paint: (x, y, z) => blanketRegion(x - OX, y, z) } },
-  mane: { sdf: shifted(maneRaw), bounds: [-1.15 + OX, -0.45, -0.15, 0.9 + OX, 0.98, 0.25] },
+  mane: { sdf: shifted(maneRaw), bounds: [-1.15 + OX, -0.45, -0.25, 0.9 + OX, 0.98, 0.25] },
   saddle: { sdf: shifted(saddleRaw), bounds: [-0.33 + OX, 0.05, -0.3, 0.28 + OX, 0.42, 0.3] },
   gold: { sdf: shifted(goldRaw), bounds: [-1.08 + OX, -0.7, -0.2, 0.68 + OX, -0.43, 0.2] },
 };
