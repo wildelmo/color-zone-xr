@@ -32,6 +32,8 @@
       transition: opacity 0.5s ease, visibility 0.5s;
     }
     #overlay.hidden { opacity: 0; visibility: hidden; pointer-events: none; }
+    #closed { position: fixed; inset: 0; display: grid; place-items: center; padding: 16px; background: #0e0907; }
+    #closed.hidden { display: none; }
     .card {
       width: min(560px, 100%); padding: 40px 36px 30px; border-radius: 6px; text-align: center;
       background: rgba(26, 17, 12, 0.86); border: 1px solid rgba(224, 174, 85, 0.6);
@@ -77,6 +79,14 @@
       <div class="small">Best on Meta Quest: open this page in the Quest browser.<br />Sound on, it plays a music box.</div>
     </div>
   </div>
+  <div id="closed" class="hidden">
+    <div class="card">
+      <div class="eyebrow">the cabinet is closed</div>
+      <h1>Thanks for <em>visiting</em></h1>
+      <p class="tagline">The music box has stopped and nothing is running.<br />You can close this tab.</p>
+      <div class="buttons"><button id="btn-reopen">Open it again</button></div>
+    </div>
+  </div>
   <div id="hud" class="hidden">
     <div id="hud-status"></div>
     <div class="bar">
@@ -85,6 +95,7 @@
       <button id="hud-reset" class="ghost" title="Reset (R)">⌂ Reset</button>
       <button id="hud-mute" class="ghost" title="Mute (M)">🔊</button>
       <button id="hud-vr" class="ghost hidden">Enter VR</button>
+      <button id="hud-exit" class="ghost" title="Exit">⏻ Exit</button>
     </div>
     <div class="hint">Drag to orbit · scroll to zoom right in to the gears · click a pedestal to bring it to the table · hold the brass key to wind</div>
   </div>

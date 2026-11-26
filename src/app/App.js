@@ -67,6 +67,7 @@ export class App {
       new Button3D({ id: 'life', label: 'Life size', glyph: '⤢', onPress: () => this.toggleLife() }),
       new Button3D({ id: 'reset', label: 'Reset', glyph: '⌂', onPress: () => this.stage.reset() }),
       new Button3D({ id: 'shelf', label: 'Put away', glyph: '✕', onPress: () => this.stage.unload() }),
+      new Button3D({ id: 'exit', label: 'Exit', glyph: '⏻', onPress: () => this.exit() }),
     ];
     this.panel = new ControlPanel(buttons);
     this.panelHome = new THREE.Vector3(0, LAYOUT.table.y - 0.02, LAYOUT.table.z + LAYOUT.tableR + 0.07);
@@ -168,11 +169,70 @@ export class App {
     this.camera.position.set(0, 0, 0);
     this.camera.quaternion.identity();
     this.placeRig(new THREE.Vector3(0, 0, 0), 0);
+    // the headset's floor origin can be anywhere in your room: once it
+    // reports where your head is, move the gallery so you stand at the table
+    this.pendingRecenter = { target: new THREE.Vector3(0, 0, 0), yaw: 0, frames: 3 };
+    const space = this.renderer.xr.getReferenceSpace();
+    space?.addEventListener?.('reset', () => {
+      const life = this.stage.mode === 'life';
+      this.pendingRecenter = { target: new THREE.Vector3(0, 0, life ? 7.4 : 0), yaw: 0, frames: 2 };
+    });
     if (this.stage.pendingShow) this.stage.startShow();
     this.onModeChange?.('xr');
   }
 
+  /**
+   * Put the viewer's head at `target` (floor x/z) facing `yaw` (0 = toward
+   * the table, -z), whatever the headset thinks its origin is.
+   */
+  recenter(target, yaw = 0) {
+    // head = midpoint of the two eyes, in rig space (three's combined XR camera
+    // sits a little behind the eyes so its frustum covers both)
+    this.rig.updateMatrixWorld(true);
+    const eyes = this.renderer.xr.getCamera().cameras || [];
+    const head = this.camera.position.clone();
+    if (eyes.length) {
+      head.set(0, 0, 0);
+      for (const e of eyes) head.add(new THREE.Vector3().setFromMatrixPosition(e.matrixWorld));
+      this.rig.worldToLocal(head.divideScalar(eyes.length));
+    }
+    const fwd = new THREE.Vector3(0, 0, -1).applyQuaternion(this.camera.quaternion);
+    const headYaw = Math.atan2(-fwd.x, -fwd.z);
+    const rot = yaw - headYaw;
+    this.rig.rotation.set(0, rot, 0);
+    const off = new THREE.Vector3(head.x, 0, head.z).applyAxisAngle(new THREE.Vector3(0, 1, 0), rot);
+    this.rig.position.set(target.x - off.x, 0, target.z - off.z);
+    this.rig.updateMatrixWorld(true);
+  }
+
+  /** leave for real: end the VR session, silence the audio, stop rendering */
+  exit() {
+    if (this.closed) return;
+    this.closed = true;
+    const session = this.renderer.xr.getSession();
+    const shutdown = () => {
+      this.renderer.setAnimationLoop(null);
+      this.desktop.enable(false);
+      try {
+        this.audio.ctx?.close();
+      } catch (e) {}
+      this.audio.ready = false;
+      this.onExit?.();
+    };
+    if (session) {
+      this.afterSessionEnd = shutdown;
+      session.end().catch(shutdown);
+    } else shutdown();
+  }
+
   onSessionEnd() {
+    if (this.afterSessionEnd) {
+      const f = this.afterSessionEnd;
+      this.afterSessionEnd = null;
+      this.mode = 'closed';
+      f();
+      return;
+    }
     this.mode = 'desktop';
     this.placeRig(new THREE.Vector3(0, 0, 0), 0);
     if (this.cameraBackup) {
@@ -184,6 +244,10 @@ export class App {
   }
 
   placeRig(pos, yaw) {
+    if (this.mode === 'xr' && this.renderer.xr.isPresenting) {
+      this.recenter(pos, yaw);
+      return;
+    }
     this.rig.position.copy(pos);
     this.rig.rotation.set(0, yaw, 0);
     if (this.mode !== 'xr') {
@@ -225,6 +289,10 @@ export class App {
     const xr = this.renderer.xr.isPresenting;
 
     let shelfHover = null;
+    if (xr && this.pendingRecenter && --this.pendingRecenter.frames <= 0) {
+      this.recenter(this.pendingRecenter.target, this.pendingRecenter.yaw);
+      this.pendingRecenter = null;
+    }
     if (xr) {
       this.xrInput.update(dt);
       shelfHover = this.interaction.update(dt, this.hands, this.rig, this.camera);

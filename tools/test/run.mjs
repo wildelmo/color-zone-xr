@@ -168,8 +168,25 @@ console.log('\n▶ Emulated Quest');
 {
   const page = await newPage({ width: 1600, height: 800 }, { xr: true, query: '?instant' });
   await page.waitForFunction(() => !document.getElementById('btn-vr').disabled && window.__cc.stage.asset, null, { timeout: 120000 });
+  // start "standing" somewhere odd in the room, facing sideways
+  await page.evaluate(() => window.__xrEmu.setHead([1.4, 1.6, 2.1], window.__xrEmu.quatYawPitch(1.1, 0)));
   await page.click('#btn-vr');
   await page.waitForFunction(() => window.__cc.renderer.xr.isPresenting && window.__xrEmu.frames > 10, null, { timeout: 30000 });
+  const placed = await page.evaluate(() => {
+    const a = window.__cc;
+    const p = a.camera.getWorldPosition(a.camera.position.clone());
+    const f = a.camera.getWorldDirection(a.camera.position.clone());
+    return { x: p.x, z: p.z, fx: f.x, fz: f.z };
+  });
+  check(Math.hypot(placed.x, placed.z) < 0.05 && placed.fz < -0.95, `entering VR puts you at the table, facing it (head at ${placed.x.toFixed(2)}, ${placed.z.toFixed(2)})`);
+  // back to a head at the origin so the scripted poses below are world poses
+  await page.evaluate(async () => {
+    window.__xrEmu.setHead([0, 1.6, 0], window.__xrEmu.quatYawPitch(0, 0));
+    await window.__xrEmu.waitFrames(3); // the head pose reaches the camera on the next frames
+    window.__cc.recenter(new window.__cc.rig.position.constructor(0, 0, 0), 0);
+  });
+  const rig0 = await page.evaluate(() => [...window.__cc.rig.position.toArray(), window.__cc.rig.rotation.y].map((v) => Math.abs(v)));
+  check(Math.max(...rig0) < 1e-3, 'recentring with the head at the origin leaves the room where it is');
   // helpers inside the page
   await page.evaluate(() => {
     const E = window.__xrEmu;
@@ -285,6 +302,7 @@ console.log('\n▶ Emulated Quest');
   await snap(page, '12-vr-life-size.png', { x: 0, y: 0, width: 800, height: 800 });
   const rig = await page.evaluate(() => window.__cc.rig.position.toArray());
   check(rig[2] < 7.3, `left stick walks (rig z ${rig[2].toFixed(2)})`);
+  await page.evaluate(() => window.__xrEmu.setHead([0, 1.6, 0], window.__xrEmu.quatYawPitch(0, 0)));
   await page.evaluate(() => window.__xrEmu.press('right', 5, 3));
   await page.waitForFunction(() => !window.__cc.stage.tween && window.__cc.stage.mode === 'toy', null, { timeout: 60000 }).catch(() => {});
   s = await state(page);
@@ -312,6 +330,46 @@ console.log('\n▶ Emulated Quest');
   await page.waitForFunction(() => window.__cc.stage.asset, null, { timeout: 120000 });
   s = await state(page);
   check(s.loaded, 'trigger on the pedestal brings the carousel back to the table');
+
+  // the in-world Exit button really leaves: VR ends, audio closes, rendering stops
+  const exitBtn = await page.evaluate(() => {
+    const b = window.__cc.panel.buttons.find((x) => x.id === 'exit').mesh;
+    return b.getWorldPosition(new b.position.constructor()).toArray();
+  });
+  await page.evaluate((b) => {
+    const E = window.__xrEmu;
+    E.setHead([0, 1.6, 0], E.quatYawPitch(0, -0.6));
+    const from = [0.15, 1.1, -0.05];
+    E.setController('right', from, window.__aim(from, b));
+  }, exitBtn);
+  await page.evaluate(() => window.__xrEmu.waitFrames(3));
+  await page.evaluate(() => {
+    window.__xrEmu.setButton('right', 0, true);
+    return window.__xrEmu.waitFrames(3).then(() => window.__xrEmu.setButton('right', 0, false));
+  });
+  await page.waitForFunction(() => window.__cc.closed && !window.__cc.renderer.xr.isPresenting, null, { timeout: 60000 }).catch(() => {});
+  const f0 = await page.evaluate(() => window.__cc.frame);
+  await page.waitForTimeout(1500);
+  const closed = await page.evaluate((f0) => ({
+    presenting: window.__cc.renderer.xr.isPresenting,
+    stopped: window.__cc.frame === f0,
+    screen: !document.getElementById('closed').classList.contains('hidden'),
+  }), f0);
+  check(!closed.presenting && closed.stopped && closed.screen, 'Exit ends VR and stops the app');
+  await page.close();
+}
+
+// ------------------------------------------------------------ hold B to exit
+console.log('\n▶ Hold B/Y to exit');
+{
+  const page = await newPage({ width: 800, height: 400 }, { xr: true, query: '?instant&empty' });
+  await page.waitForFunction(() => !document.getElementById('btn-vr').disabled, null, { timeout: 60000 });
+  await page.click('#btn-vr');
+  await page.waitForFunction(() => window.__cc.renderer.xr.isPresenting && window.__xrEmu.frames > 5, null, { timeout: 30000 });
+  await page.evaluate(() => window.__xrEmu.setButton('right', 5, true));
+  await page.waitForFunction(() => window.__cc.closed, null, { timeout: 90000 }).catch(() => {});
+  await page.evaluate(() => window.__xrEmu.setButton('right', 5, false));
+  check(await page.evaluate(() => window.__cc.closed && !window.__cc.renderer.xr.isPresenting), 'holding B exits');
   await page.close();
 }
 

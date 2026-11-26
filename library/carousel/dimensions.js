@@ -49,7 +49,7 @@ export const D = {
   finialTop: 9.45,
 };
 
-/** crankshaft turns per platform turn (pinion rolling round the crown gear) */
+/** crankshaft turns per platform turn (pinion rolling round the crown gear; it turns the opposite way, see index.js) */
 D.ratio = D.pinionX / D.pinionR;
 /** pole top sits this far below the shaft when the crank is level */
 D.poleTopToHorse = D.shaftY - D.rod - D.horseMid;
