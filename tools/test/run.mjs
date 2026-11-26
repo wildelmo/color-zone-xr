@@ -343,11 +343,10 @@ console.log('\n▶ Emulated Quest');
     E.setController('right', from, window.__aim(from, b));
   }, exitBtn);
   await page.evaluate(() => window.__xrEmu.waitFrames(3));
-  await page.evaluate(() => {
-    window.__xrEmu.setButton('right', 0, true);
-    return window.__xrEmu.waitFrames(3).then(() => window.__xrEmu.setButton('right', 0, false));
-  });
+  // (no waitFrames after the press: once Exit works, VR frames stop for good)
+  await page.evaluate(() => window.__xrEmu.setButton('right', 0, true));
   await page.waitForFunction(() => window.__cc.closed && !window.__cc.renderer.xr.isPresenting, null, { timeout: 60000 }).catch(() => {});
+  await page.evaluate(() => window.__xrEmu.setButton('right', 0, false));
   const f0 = await page.evaluate(() => window.__cc.frame);
   await page.waitForTimeout(1500);
   const closed = await page.evaluate((f0) => ({
