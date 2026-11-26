@@ -116,8 +116,9 @@ console.log('\n▶ Desktop: boot, assemble, wind, play');
     return window.__cc.stage.asset.state.wind;
   });
   // wind with the keyboard
+  // hold W until the spring has wound (wall-clock time means little on slow software GL)
   await page.keyboard.down('w');
-  await page.waitForTimeout(1500);
+  await page.waitForFunction((w0) => window.__cc.stage.asset.state.wind > w0 + 0.06, notes0, { timeout: 90000 }).catch(() => {});
   await page.keyboard.up('w');
   s = await state(page);
   check(s.wind > notes0 + 0.05, `holding W winds the spring (${notes0.toFixed(2)} → ${s.wind.toFixed(2)})`);
