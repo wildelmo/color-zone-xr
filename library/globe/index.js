@@ -6,6 +6,7 @@ import { meshLayer, modelDetails } from '../core/sdfClient.js';
 import { Emitter, Timeline, ease } from '../core/asset.js';
 import { G } from './dimensions.js';
 import { buildTown, townUniforms, townMaterial } from './town.js';
+import { buildSmoke } from './smoke.js';
 import { buildDragons } from './dragons.js';
 import { buildGlass } from './glass.js';
 import { buildWater } from './water.js';
@@ -23,15 +24,17 @@ export const info = {
     'A floating island kingdom inside a crystal globe: a walled castle town of some forty houses, a keep and a cathedral, waterfalls spilling into mist, and two small dragons who fly, perch and puff smoke. Shake it to make it snow. Wind the key crystal for the lullaby and the aurora.',
   scale: 1 / 240, // about 43 cm across on the table
   bounds: { center: [0, 62, 0], radius: 64 },
-  // "room size": a globe about 2.4 m across standing in the gallery, the town
-  // at chest height so you can walk round it and lean in over the roofs
+  // "room size": blown up to about the size of the carousel ride (7 m tall,
+  // 6 m across the glass) standing in the gallery, seen whole from a few
+  // steps back, with the town floating a little above your head
   life: {
     label: 'Room size',
-    scale: 1 / 44,
+    scale: 1 / 17,
     floor: 0, // the base stands on the gallery floor
-    viewer: [0, 2.6],
+    viewer: [0, 6.6],
     yaw: 0,
-    focus: [0, 66, 0],
+    focus: [0, 69, 0],
+    lift: 4.5, // the right stick floats you up to the rooftops
   },
 };
 
@@ -81,7 +84,7 @@ export async function createGlobe(ctx, { lod = 'hero' } = {}) {
 
   // ---------------------------------------------------------------- town
   progress(0.4, 'raising the town');
-  const town = buildTown(kit, U, { lod });
+  const town = await buildTown(kit, U, { lod, step: () => ctx.step() });
   island.add(town.group);
   await ctx.step();
   const water = buildWater(kit, { lod });
@@ -91,6 +94,8 @@ export async function createGlobe(ctx, { lod = 'hero' } = {}) {
   const lights = new BulbString({ radius: 0.12, glow: 1.4, detail: hero ? 1 : 0 });
   town.lanterns.forEach((p, i) => lights.add(p, 0, i, town.lanterns.length, '#ffc070'));
   island.add(lights.build(kit));
+  const smoke = hero ? buildSmoke(kit, town.chimneys) : null;
+  if (smoke) island.add(smoke.mesh);
   await ctx.step();
 
   // ------------------------------------------------------------- dragons
@@ -271,6 +276,7 @@ export async function createGlobe(ctx, { lod = 'hero' } = {}) {
     dragons.update(dt, state.time, { startle: state.agitation });
     snow.update(dt, state.time, state.agitation);
     town.update(state.time, dt, state.speed);
+    smoke?.update(state.time, { night: state.night, agitation: state.agitation });
     water.update(state.time, dt);
     crystals.update(state.time);
     glass.update(state.time, state.night);

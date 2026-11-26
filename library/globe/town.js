@@ -3,6 +3,7 @@ import { GeoBag, lathe, mat } from '../core/geometry.js';
 import { mulberry32 } from '../core/random.js';
 import { T, STREETS, edgeR, topHeight, angDist, terraceOf } from './terrain.js';
 import { facadeAtlas, tileUV, roofTiles, stoneBlocks, roseWindow } from './townTextures.js';
+import { makeDetailer, houseLook } from './details.js';
 
 /**
  * The castle town on the floating island (island-local coordinates).
@@ -66,7 +67,7 @@ export function townMaterial(kit, params, uniforms, { build = true, snow = true 
 const ROOF_COLORS = ['#5b6b7c', '#8a4434', '#4f7468', '#6e4a3a', '#3f4a5a', '#9a5a3a'];
 const TOWER_ROOFS = ['#3f5a8a', '#8a2e2e', '#2f6a5a', '#5a3a6a'];
 
-export function buildTown(kit, uniforms, { lod = 'hero', seed = 11 } = {}) {
+export async function buildTown(kit, uniforms, { lod = 'hero', seed = 11, step = null } = {}) {
   const hero = lod === 'hero';
   const rnd = mulberry32(seed);
   const atlas = facadeAtlas();
@@ -82,8 +83,14 @@ export function buildTown(kit, uniforms, { lod = 'hero', seed = 11 } = {}) {
     wood: townMaterial(kit, { vertexColors: true, roughness: 0.7 }, uniforms),
     gold: townMaterial(kit, { color: 0xd9a84e, metalness: 1, roughness: 0.3 }, uniforms, { snow: false }),
     glass: townMaterial(kit, { map: rose, emissiveMap: rose, emissive: 0xffffff, emissiveIntensity: 1.6, roughness: 0.3 }, uniforms, { snow: false }),
+    snow: townMaterial(kit, { vertexColors: true, roughness: 0.95 }, uniforms, { snow: false }),
+    ice: townMaterial(kit, { color: 0xd6eeff, roughness: 0.12, metalness: 0.1 }, uniforms, { snow: false }),
   };
   const bag = new GeoBag();
+  // carved detail (its own random stream, so the town's layout doesn't change)
+  const drnd = mulberry32(seed + 101);
+  const DT = makeDetailer(bag, drnd, { hero });
+  const plainLook = { shutter: '#3d5a3a', door: '#5a3420', barge: '#3a2618', roof: '#5b6b7c', lit: 0.3 };
   const hill = new THREE.Vector2(T.hill[0], T.hill[1]);
   const maxR = T.edge + 3;
   const orderOf = (x, z) => Math.min(0.85, Math.hypot(x - hill.x, z - hill.y) / maxR);
@@ -101,16 +108,23 @@ export function buildTown(kit, uniforms, { lod = 'hero', seed = 11 } = {}) {
    * rectangle in the frame m (local y from y0 to y0 + h). Corners meet
    * exactly, so there are no gaps. kindOf(wall, bay, bays) picks the tile.
    */
-  const storey = (m, w, d, y0, h, style, kindOf, build, lit) => {
+  const storey = (m, w, d, y0, h, style, kindOf, build, lit, look = null, upper = false) => {
     const P = [[-w / 2, d / 2], [w / 2, d / 2], [w / 2, -d / 2], [-w / 2, -d / 2]];
     const pos = [], uv = [], idx = [];
     let vi = 0;
+    const attrs = { build, lit: 2 };
     for (let k = 0; k < 4; k++) {
       const [x0, z0] = P[k], [x1, z1] = P[(k + 1) % 4];
       const len = Math.hypot(x1 - x0, z1 - z0);
       const bays = Math.max(1, Math.round(len / 2.3));
+      // the wall's frame: +x along it, +z out of it
+      const ux = (x1 - x0) / len, uz = (z1 - z0) / len;
+      const fw = look ? m.clone().multiply(mat(x0, y0, z0, 0, Math.atan2(-uz, ux))) : null;
+      if (look) DT.timbers(fw, len, h, bays, style, upper, attrs);
       for (let b = 0; b < bays; b++) {
-        const [u0, v0, u1, v1] = tileUV(style, kindOf(k, b, bays));
+        const kind = kindOf(k, b, bays);
+        if (look) DT.bay(fw.clone().multiply(mat((len * b) / bays, 0, 0)), len / bays, h, style, kind, look, attrs, k === 2);
+        const [u0, v0, u1, v1] = tileUV(style, kind);
         const ax = x0 + ((x1 - x0) * b) / bays, az = z0 + ((z1 - z0) * b) / bays;
         const cx = x0 + ((x1 - x0) * (b + 1)) / bays, cz = z0 + ((z1 - z0) * (b + 1)) / bays;
         pos.push(ax, y0, az, cx, y0, cz, cx, y0 + h, cz, ax, y0 + h, az);
@@ -144,12 +158,12 @@ export function buildTown(kit, uniforms, { lod = 'hero', seed = 11 } = {}) {
    * ridge, so walls and gables meet them with no gaps. Returns the ridge
    * height above the wall tops.
    */
-  const pitchedRoof = (m, W, D, alongX, tanA, color, style, build, lit) => {
+  const pitchedRoof = (m, W, Dp, alongX, tanA, color, style, build, lit, { small = false, look = null } = {}) => {
     const fr = alongX ? m : m.clone().multiply(mat(0, 0, 0, 0, Math.PI / 2));
-    const span = alongX ? D : W, len = alongX ? W : D;
+    const span = alongX ? Dp : W, len = alongX ? W : Dp;
     const R = (span / 2) * tanA;
     const ang = Math.atan(tanA);
-    const oh = 0.35, ohg = 0.25, thick = 0.2;
+    const oh = small ? 0.14 : 0.35, ohg = small ? 0.1 : 0.25, thick = small ? 0.1 : 0.2;
     const run = span / 2 + oh, drop = oh * tanA;
     const L = Math.hypot(run, R + drop) + 0.14;
     for (const sgn of [1, -1]) {
@@ -161,8 +175,9 @@ export function buildTown(kit, uniforms, { lod = 'hero', seed = 11 } = {}) {
       for (let i = 0; i < uvA.count; i++) uvA.setXY(i, uvA.getX(i) * (len + 2 * ohg) * 0.35, uvA.getY(i) * L * 0.35);
       bag.add(gg, fr.clone().multiply(mat(0, cy, cz, sgn * ang, 0, 0)), 'roof', color, { build, lit: 2 });
     }
-    bag.add(new THREE.BoxGeometry(len + 2 * ohg + 0.1, 0.24, 0.38), fr.clone().multiply(mat(0, R + thick * 0.85, 0)), 'roof', '#3a3a3a', { build, lit: 2 });
+    bag.add(new THREE.BoxGeometry(len + 2 * ohg + 0.1, small ? 0.12 : 0.24, small ? 0.2 : 0.38), fr.clone().multiply(mat(0, R + thick * 0.85, 0)), 'roof', '#3a3a3a', { build, lit: 2 });
     for (const sgn of [1, -1]) gable(fr.clone().multiply(mat(sgn * (len / 2 - 0.004), 0, 0, 0, (sgn * Math.PI) / 2)), span, R, style, build, lit);
+    if (!small && look) DT.eaves(fr, span, len, R, tanA, oh, ohg, { build, lit: 2 }, look);
     return { R, fr, span, len };
   };
 
@@ -223,7 +238,10 @@ export function buildTown(kit, uniforms, { lod = 'hero', seed = 11 } = {}) {
     if (!blocked(x, z, 2)) houses.push({ x, z, a: ac, w: 3 + rnd(), d: 3.2 + rnd(), facing: -1, t: 2 });
   }
 
+  // built a few houses at a time, so the headset keeps drawing frames
+  let built = 0;
   for (const h of houses) {
+    if (step && ++built % 6 === 0) await step();
     const y = Math.min(topHeight(h.x, h.z), topHeight(h.x + 1, h.z), topHeight(h.x - 1, h.z), topHeight(h.x, h.z + 1), topHeight(h.x, h.z - 1)) - 0.05;
     const floors = h.t === 2 ? 2 + (rnd() < 0.5 ? 1 : 0) : h.t === 1 ? 2 + (rnd() < 0.35 ? 1 : 0) : 1 + (rnd() < 0.6 ? 1 : 0);
     const style = Math.floor(rnd() * 4);
@@ -234,21 +252,24 @@ export function buildTown(kit, uniforms, { lod = 'hero', seed = 11 } = {}) {
     const m = mat(h.x, y, h.z, 0, yaw);
     const jet = style % 2 === 0 ? 0.18 : 0; // timber houses step out at each upper floor
     const doorBay = Math.floor(rnd() * Math.max(1, Math.round(h.w / 2.3)));
+    const look = { ...houseLook(drnd), lit };
     let y0 = 0;
     for (let f = 0; f < floors; f++) {
       const hh = f === 0 ? 3.1 : 2.8;
       const ww = h.w + 2 * jet * f, dd = h.d + 2 * jet * f;
-      storey(m, ww, dd, y0, hh, style, (k, b) => (f === 0 ? (k === 0 && b === doorBay ? 0 : 1) : rnd() < 0.8 ? 2 : 3), build, lit + f * 0.04);
+      storey(m, ww, dd, y0, hh, style, (k, b) => (f === 0 ? (k === 0 && b === doorBay ? 0 : 1) : rnd() < 0.8 ? 2 : 3), build, lit + f * 0.04, look, f > 0);
       if (f > 0 && jet) bag.add(new THREE.BoxGeometry(ww + 0.1, 0.18, dd + 0.1), m.clone().multiply(mat(0, y0 + 0.02, 0)), 'wood', '#3a2618', { build, lit: 2 });
       y0 += hh;
     }
     const W = h.w + 2 * jet * (floors - 1), D = h.d + 2 * jet * (floors - 1);
     const alongX = rnd() < 0.7;
     const roofCol = ROOF_COLORS[Math.floor(rnd() * ROOF_COLORS.length)];
+    look.roof = roofCol;
     const top = m.clone().multiply(mat(0, y0, 0));
-    const roof = pitchedRoof(top, W, D, alongX, 0.95 + rnd() * 0.55, roofCol, style, build, lit);
+    const roof = pitchedRoof(top, W, D, alongX, 0.95 + rnd() * 0.55, roofCol, style, build, lit, { look });
     // chimney (stone) rising through the roof, with a cap
     let chimneyTop = roof.R;
+    let chim = null;
     if (rnd() < 0.75) {
       const cx = (rnd() - 0.5) * roof.len * 0.6;
       const cz = (rnd() < 0.5 ? 1 : -1) * roof.span * 0.22;
@@ -256,7 +277,18 @@ export function buildTown(kit, uniforms, { lod = 'hero', seed = 11 } = {}) {
       const ch = atRoof + 1.3;
       bag.add(new THREE.BoxGeometry(0.6, ch, 0.6), roof.fr.clone().multiply(mat(cx, ch / 2, cz)), 'stone', '#9a948a', { build, lit: 2 });
       bag.add(new THREE.BoxGeometry(0.85, 0.18, 0.85), roof.fr.clone().multiply(mat(cx, ch, cz)), 'stone', '#7a746a', { build, lit: 2 });
-      chimneyTop = Math.max(chimneyTop, ch);
+      if (hero) {
+        // a chimney pot, and smoke from it
+        bag.add(new THREE.CylinderGeometry(0.14, 0.17, 0.35, 8), roof.fr.clone().multiply(mat(cx, ch + 0.26, cz)), 'stone', '#8a5a44', { build, lit: 2 });
+        DT.chimney(new THREE.Vector3(cx, ch + 0.5, cz).applyMatrix4(roof.fr));
+      }
+      chimneyTop = Math.max(chimneyTop, ch + 0.45);
+      chim = { cx, cz };
+    }
+    // a dormer on the street side of long roofs
+    if (alongX && roof.len >= 3.8 && roof.span >= 3.4 && drnd() < 0.6) {
+      const xd = (drnd() - 0.5) * (roof.len - 2.2);
+      if (!chim || chim.cz < 0 || Math.abs(chim.cx - xd) > 1.3) DT.dormer(roof.fr, roof.span, roof.R, xd, style, pitchedRoof, look, { build, lit: 2 });
     }
     // stone foundation reaching down the slope
     bag.add(new THREE.BoxGeometry(h.w + 0.2, 2.2, h.d + 0.2), m.clone().multiply(mat(0, -1.0, 0)), 'stone', '#8a847a', { build, lit: 2 });
@@ -268,6 +300,7 @@ export function buildTown(kit, uniforms, { lod = 'hero', seed = 11 } = {}) {
     obstacle(h.x, h.z, Math.hypot(W, D) / 2 + 0.4, y + y0 + chimneyTop + 0.3);
   }
 
+  if (step) await step();
   // ---------------------------------------------------------- town walls
   const stoneCol = '#a8a196';
   const wallTop = 4.2;
@@ -390,6 +423,7 @@ export function buildTown(kit, uniforms, { lod = 'hero', seed = 11 } = {}) {
     tower(x, z, 1.5, 6.5, TOWER_ROOFS[(i + 1) % TOWER_ROOFS.length], [orderOf(x, z), 0], false, false);
   }
 
+  if (step) await step();
   // ------------------------------------------------------------- the keep
   {
     const cx = hill.x, cz = hill.y;
@@ -453,7 +487,7 @@ export function buildTown(kit, uniforms, { lod = 'hero', seed = 11 } = {}) {
     const hm = mat(hx, g0 + 0.2, hz, 0, Math.PI / 2);
     storey(hm, 10, 5.2, 0, 3.1, 1, (k, b) => (k === 0 && b === 2 ? 0 : 1), [0.08, g0], 0.25);
     storey(hm, 10, 5.2, 3.1, 2.8, 1, () => 2, [0.08, g0], 0.3);
-    pitchedRoof(hm.clone().multiply(mat(0, 5.9, 0)), 10, 5.2, true, 1.6, '#5b6b7c', 1, [0.08, g0], 0.4);
+    pitchedRoof(hm.clone().multiply(mat(0, 5.9, 0)), 10, 5.2, true, 1.6, '#5b6b7c', 1, [0.08, g0], 0.4, { look: plainLook });
     obstacle(hx, hz, 6.0, g0 + 0.2 + 5.9 + 4.4);
   }
 
@@ -466,7 +500,7 @@ export function buildTown(kit, uniforms, { lod = 'hero', seed = 11 } = {}) {
     const W = 5.2, L = 12;
     storey(m, W, L, 0, 3.1, 1, (k, b, n) => (k === 0 && b === Math.floor(n / 2) ? 0 : 1), build, 0.2);
     storey(m, W, L, 3.1, 2.8, 1, () => 2, build, 0.2);
-    pitchedRoof(m.clone().multiply(mat(0, 5.9, 0)), W, L, false, 1.85, '#3f4a5a', 1, build, 0.2);
+    pitchedRoof(m.clone().multiply(mat(0, 5.9, 0)), W, L, false, 1.85, '#3f4a5a', 1, build, 0.2, { look: plainLook });
     obstacle(cath.x, cath.y, 7.0, g0 + 5.9 + 5.2);
     // buttresses
     for (let k = 0; k < 4; k++) {
@@ -612,6 +646,8 @@ export function buildTown(kit, uniforms, { lod = 'hero', seed = 11 } = {}) {
     }
   }
 
+  for (const p of DT.lamps) lanterns.push(p);
+  if (step) await step();
   const group = bag.build(mats, { name: 'town' });
   if (sails) group.add(sails);
 
@@ -629,6 +665,7 @@ export function buildTown(kit, uniforms, { lod = 'hero', seed = 11 } = {}) {
     /** highest solid thing at (x, z) (island-local); dilated adds a dragon-sized margin */
     heightAt: heights.heightAt,
     houses: houses.length,
+    chimneys: DT.chimneys,
     update(t, dt, speed) {
       if (sails) sails.rotation.z -= dt * (0.4 + speed * 0.8);
       if (walkers) walkers.update(t);

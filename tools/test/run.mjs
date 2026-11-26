@@ -429,7 +429,7 @@ console.log('\n▶ Le Royaume de Givre (snow globe), emulated Quest');
   await page.evaluate(() => window.__xrEmu.setButton('right', 1, false));
   await page.evaluate(() => window.__xrEmu.press('right', 5, 3));
   await page.waitForFunction(() => !window.__cc.stage.tween, null, { timeout: 60000 }).catch(() => {});
-  // room size: a big globe standing in the gallery, the town at chest height
+  // room size: blown up to carousel-ride size, standing in the gallery under the ceiling
   await page.evaluate(() => window.__cc.stage.setLife(true));
   await page.waitForFunction(() => !window.__cc.stage.tween && window.__cc.stage.mode === 'life', null, { timeout: 90000 }).catch(() => {});
   s = await state(page);
@@ -437,10 +437,11 @@ console.log('\n▶ Le Royaume de Givre (snow globe), emulated Quest');
     const a = window.__cc;
     const island = a.stage.asset.root.getObjectByName('island');
     const p = island.getWorldPosition(island.position.clone());
-    return { islandY: p.y, room: a.hall.group.children.find((o) => o.name === 'floor').visible };
+    const b = a.stage.worldBounds();
+    return { islandY: p.y, top: b.center.y + b.radius, room: a.hall.group.children.find((o) => o.name === 'floor').visible };
   });
-  check(s.stageMode === 'life' && Math.abs(s.scale - 1 / 44) < 0.002 && big.room && big.islandY > 1.1 && big.islandY < 1.8, `room size: a big globe in the gallery, the town at chest height (${big.islandY.toFixed(2)} m)`);
-  await page.evaluate(() => window.__xrEmu.setHead([0, 1.6, 0], window.__xrEmu.quatYawPitch(0, -0.25)));
+  check(s.stageMode === 'life' && Math.abs(s.scale - 1 / 17) < 0.002 && big.room && big.islandY > 3 && big.islandY < 4.5 && big.top < 8, `room size: carousel-sized in the gallery, the town floating at ${big.islandY.toFixed(1)} m, the top under the ceiling (${big.top.toFixed(1)} m)`);
+  await page.evaluate(() => window.__xrEmu.setHead([0, 1.6, 0], window.__xrEmu.quatYawPitch(0, 0.18)));
   await page.evaluate(() => window.__xrEmu.waitFrames(6));
   await snap(page, '17-vr-room-size.png', { x: 0, y: 0, width: 800, height: 800 });
   // five simulated minutes of dragon flight: never inside a building, never outside the glass
@@ -487,12 +488,12 @@ console.log("\n▶ Meta Quest 3 (Meta's IWER emulator), hands on the controllers
   await run({ cmd: 'press', hand: 'right', button: 'trigger' });
   await q.page.waitForFunction(() => !window.__cc.stage.tween && window.__cc.stage.mode === 'life', null, { timeout: 90000 }).catch(() => {});
   s = await st();
-  check(s.stageMode === 'life' && Math.abs(s.scale - 1 / 44) < 0.002, 'the Room size button stands the globe up big in the gallery');
+  check(s.stageMode === 'life' && Math.abs(s.scale - 1 / 17) < 0.002, 'the Room size button blows the globe up to carousel size in the gallery');
   // walk up to it with the left stick and look at the town
   const z0 = s.head.pos[2];
   const walked = await run({ cmd: 'stick', hand: 'left', x: 0, y: -1, ms: 1200 });
   check(walked.head.pos[2] < z0 - 0.3, `the left stick walks you toward it (${(z0 - walked.head.pos[2]).toFixed(2)} m)`);
-  await run({ cmd: 'head', look: [0, 1.75, 0] });
+  await run({ cmd: 'head', look: [0, 3.4, 0] });
   await run({ cmd: 'shot', file: '20-quest3-room-size.png' });
   // tap B: back on the table
   await run({ cmd: 'press', hand: 'right', button: 'b' });

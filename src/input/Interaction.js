@@ -271,6 +271,14 @@ export class Interaction {
       rig.rotation.y += ang;
     }
     if (R.connected && Math.abs(R.stick.x) < 0.3) this.turnCooldown = Math.min(this.turnCooldown, 0);
+    // right stick up / down: rise and sink in the big views, to look over
+    // the walls of the snow-globe town or down into the carousel's canopy
+    const stage = this.app.stage;
+    if (stage.mode === 'life' && R.connected && Math.abs(R.stick.y) > 0.25 && Math.abs(R.stick.x) < 0.6) {
+      const L2 = stage.asset?.info.life || {};
+      const lift = L2.lift ?? 3;
+      rig.position.y = THREE.MathUtils.clamp(rig.position.y - R.stick.y * 1.3 * dt, 0, lift);
+    }
     // left stick: smooth walk, head-relative
     if (L.connected && (Math.abs(L.stick.x) > 0.1 || Math.abs(L.stick.y) > 0.1)) {
       const fwd = new THREE.Vector3();

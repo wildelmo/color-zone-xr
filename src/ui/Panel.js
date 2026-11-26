@@ -213,7 +213,7 @@ export class InfoCard {
       ['A / X', 'hold to wind it up (the key)'],
       ['Shake', 'shake the snow globe for real, or press Shake'],
       ['B / Y', 'tap to put it back on the table; hold to exit'],
-      ['Sticks', 'left to walk, right to turn'],
+      ['Sticks', 'left to walk, right to turn; in the big views push right up or down to rise and sink'],
     ];
     for (const [k, v] of lines) {
       ctx.font = `700 32px ${SANS}`;
