@@ -20,5 +20,5 @@ export default [
       'no-empty': ['error', { allowEmptyCatch: true }],
     },
   },
-  { ignores: ['vendor/**', 'docs/**', 'node_modules/**', 'tools/test/xr-emulator.js'] },
+  { ignores: ['vendor/**', 'docs/**', 'node_modules/**', '_site/**', 'tools/test/xr-emulator.js'] },
 ];

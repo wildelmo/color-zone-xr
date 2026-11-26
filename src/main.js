@@ -66,4 +66,8 @@ $('hud-mute').addEventListener('click', (e) => {
   e.currentTarget.textContent = app.audio.muted ? '🔇' : '🔊';
 });
 
+// an earlier app on this address installed an offline service worker; make
+// sure nothing stale keeps serving old files (see sw.js)
+navigator.serviceWorker?.getRegistrations().then((list) => list.forEach((r) => r.unregister())).catch(() => {});
+
 app.boot();
