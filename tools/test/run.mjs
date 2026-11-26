@@ -41,6 +41,22 @@ async function newPage(viewport, { xr = false, query = '' } = {}) {
   return page;
 }
 
+/**
+ * Screenshot with the render loop paused: on a software-GL CI runner a frame
+ * can take over a second, and a capture competing with the loop can stall.
+ */
+async function snap(page, file, clip) {
+  // let the latest camera/pose render first, then hold that frame
+  const f = await page.evaluate(() => window.__cc.frame);
+  await page.waitForFunction((f) => window.__cc.frame >= f + 2, f, { timeout: 120000 });
+  await page.evaluate(() => (window.__cc.paused = true));
+  try {
+    await page.screenshot({ path: path.join(OUT, file), clip, timeout: 120000 });
+  } finally {
+    await page.evaluate(() => (window.__cc.paused = false));
+  }
+}
+
 const state = (page) =>
   page.evaluate(() => {
     const a = window.__cc;
@@ -85,12 +101,12 @@ console.log('\n▶ Desktop: boot, assemble, wind, play');
   const page = await newPage({ width: 1280, height: 800 });
   await page.waitForTimeout(800);
   await page.waitForFunction(() => window.__cc.stage.asset, null, { timeout: 120000 });
-  await page.screenshot({ path: path.join(OUT, '01-title.png') });
+  await snap(page, '01-title.png');
   let s = await state(page);
   check(s.loaded && !s.assembled, 'hero carousel built off-screen, waiting to assemble');
   await page.click('#btn-desktop');
   await page.waitForFunction(() => window.__cc.stage.asset.timeline.t > 3.2, null, { timeout: 60000 });
-  if (!QUICK) await page.screenshot({ path: path.join(OUT, '02-assembling.png') });
+  if (!QUICK) await snap(page, '02-assembling.png');
   await page.waitForFunction(() => window.__cc.stage.asset.state.assembled, null, { timeout: 120000 });
   s = await state(page);
   check(s.assembled, 'assembly animation completed');
@@ -100,8 +116,9 @@ console.log('\n▶ Desktop: boot, assemble, wind, play');
     return window.__cc.stage.asset.state.wind;
   });
   // wind with the keyboard
+  // hold W until the spring has wound (wall-clock time means little on slow software GL)
   await page.keyboard.down('w');
-  await page.waitForTimeout(1500);
+  await page.waitForFunction((w0) => window.__cc.stage.asset.state.wind > w0 + 0.06, notes0, { timeout: 90000 }).catch(() => {});
   await page.keyboard.up('w');
   s = await state(page);
   check(s.wind > notes0 + 0.05, `holding W winds the spring (${notes0.toFixed(2)} → ${s.wind.toFixed(2)})`);
@@ -112,22 +129,22 @@ console.log('\n▶ Desktop: boot, assemble, wind, play');
   check(notes > 5, `music box played ${notes} notes`);
   check(s.drawCalls > 30 && s.drawCalls < 260, `draw calls in budget (${s.drawCalls})`);
   console.log(`    triangles this frame (incl. shadow pass): ${s.triangles}`);
-  await page.screenshot({ path: path.join(OUT, '03-desktop.png') });
+  await snap(page, '03-desktop.png');
   if (!QUICK) {
     const T = [0, 0.84, -0.62];
     const at = (dx, dy, dz) => [T[0] + dx, T[1] + dy, T[2] + dz];
     await look(page, at(0.06, 0.12, 0.08), at(0.2, 0.17, 0.28));
     await page.waitForTimeout(600);
-    await page.screenshot({ path: path.join(OUT, '04-horses-close.png') });
+    await snap(page, '04-horses-close.png');
     await look(page, at(0, 0.03, 0.22), at(0.0, 0.05, 0.36));
     await page.waitForTimeout(600);
-    await page.screenshot({ path: path.join(OUT, '05-music-movement.png') });
+    await snap(page, '05-music-movement.png');
     await look(page, at(0, 0.24, 0), at(0.15, 0.13, 0.12));
     await page.waitForTimeout(600);
-    await page.screenshot({ path: path.join(OUT, '06-under-canopy.png') });
+    await snap(page, '06-under-canopy.png');
     await look(page, at(0, 0.12, 0.06), at(0.03, 0.14, 0.16));
     await page.waitForTimeout(600);
-    await page.screenshot({ path: path.join(OUT, '07-band-organ.png') });
+    await snap(page, '07-band-organ.png');
   }
   // life size from the HUD
   await page.click('#hud-life');
@@ -137,7 +154,7 @@ console.log('\n▶ Desktop: boot, assemble, wind, play');
   if (!QUICK) {
     await look(page, [0, 2.6, 0], [2.2, 1.6, 5.6]);
     await page.waitForTimeout(800);
-    await page.screenshot({ path: path.join(OUT, '08-life-size.png') });
+    await snap(page, '08-life-size.png');
   }
   await page.click('#hud-life');
   await page.waitForFunction(() => !window.__cc.stage.tween && window.__cc.stage.mode === 'toy', null, { timeout: 60000 }).catch(() => {});
@@ -174,7 +191,7 @@ console.log('\n▶ Emulated Quest');
   check(s.presenting && s.mode === 'xr', 'XR session presenting');
   check(s.loaded && s.assembled, 'carousel on the table in VR');
   await page.waitForTimeout(1500);
-  await page.screenshot({ path: path.join(OUT, '10-vr-table.png'), clip: { x: 0, y: 0, width: 800, height: 800 } });
+  await snap(page, '10-vr-table.png', { x: 0, y: 0, width: 800, height: 800 });
 
   // point at the key and hold the trigger to wind
   const key = await page.evaluate(() => {
@@ -209,7 +226,7 @@ console.log('\n▶ Emulated Quest');
   await page.evaluate(() => window.__xrEmu.waitFrames(5));
   s = await state(page);
   check(s.holder[1] > 1.2, `carousel lifted to eye level (y ${s.holder[1]})`);
-  await page.screenshot({ path: path.join(OUT, '11-vr-holding.png'), clip: { x: 0, y: 0, width: 800, height: 800 } });
+  await snap(page, '11-vr-holding.png', { x: 0, y: 0, width: 800, height: 800 });
 
   // second hand: pull apart to scale it up
   const scale0 = s.scale;
@@ -265,7 +282,7 @@ console.log('\n▶ Emulated Quest');
   await page.evaluate(() => window.__xrEmu.waitFrames(8));
   await page.evaluate(() => window.__xrEmu.setAxes('left', 0, 0));
   await page.waitForTimeout(600);
-  await page.screenshot({ path: path.join(OUT, '12-vr-life-size.png'), clip: { x: 0, y: 0, width: 800, height: 800 } });
+  await snap(page, '12-vr-life-size.png', { x: 0, y: 0, width: 800, height: 800 });
   const rig = await page.evaluate(() => window.__cc.rig.position.toArray());
   check(rig[2] < 7.3, `left stick walks (rig z ${rig[2].toFixed(2)})`);
   await page.evaluate(() => window.__xrEmu.press('right', 5, 3));
@@ -290,7 +307,7 @@ console.log('\n▶ Emulated Quest');
     E.setController('right', from, window.__aim(from, p));
   }, ped);
   await page.evaluate(() => window.__xrEmu.waitFrames(4));
-  if (!QUICK) await page.screenshot({ path: path.join(OUT, '13-vr-shelf.png'), clip: { x: 0, y: 0, width: 800, height: 800 } });
+  if (!QUICK) await snap(page, '13-vr-shelf.png', { x: 0, y: 0, width: 800, height: 800 });
   await page.evaluate(() => window.__xrEmu.press('right', 0, 3));
   await page.waitForFunction(() => window.__cc.stage.asset, null, { timeout: 120000 });
   s = await state(page);
