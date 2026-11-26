@@ -358,6 +358,88 @@ console.log('\n▶ Emulated Quest');
   await page.close();
 }
 
+// --------------------------------------------------- the snow globe, desktop
+if (!QUICK) {
+  console.log('\n▶ Le Royaume de Givre (snow globe), desktop shots');
+  const page = await newPage({ width: 1280, height: 800 }, { query: '?asset=globe&instant' });
+  await page.waitForFunction(() => window.__cc.stage.asset, null, { timeout: 240000 });
+  await page.click('#btn-desktop');
+  await page.waitForTimeout(1500);
+  await look(page, [0, 1.12, -0.62], [0.32, 1.32, -0.02]);
+  await snap(page, '14-globe.png');
+  await look(page, [0.0, 1.13, -0.62], [0.12, 1.2, -0.42]);
+  await snap(page, '18-globe-town.png');
+  // a dragon up close (wherever it is right now)
+  const dp = await page.evaluate(() => {
+    const a = window.__cc.stage.asset;
+    const d = a.debug.dragons[0];
+    const p = a.root.localToWorld(d.pos.clone());
+    return p.toArray();
+  });
+  await look(page, dp, [dp[0] + 0.03, dp[1] + 0.012, dp[2] + 0.035]);
+  await snap(page, '19-dragon.png');
+  check(true, 'snow globe desktop screenshots');
+  await page.close();
+}
+
+// --------------------------------------------------------- the snow globe
+console.log('\n▶ Le Royaume de Givre (snow globe), emulated Quest');
+{
+  const page = await newPage({ width: 1600, height: 800 }, { xr: true, query: '?asset=globe&instant' });
+  await page.waitForFunction(() => !document.getElementById('btn-vr').disabled && window.__cc.stage.asset, null, { timeout: 240000 });
+  let s = await state(page);
+  check(s.loaded && (await page.evaluate(() => window.__cc.stage.asset.info.id)) === 'globe', 'the snow globe loads onto the table');
+  const info = await page.evaluate(() => ({ houses: window.__cc.stage.asset.stats.houses, perches: window.__cc.stage.asset.debug.perches.length }));
+  check(info.houses > 35 && info.perches >= 3, `a town of ${info.houses} houses and ${info.perches} dragon perches`);
+  await page.click('#btn-vr');
+  await page.waitForFunction(() => window.__cc.renderer.xr.isPresenting && window.__xrEmu.frames > 10, null, { timeout: 30000 });
+  await page.evaluate(() => {
+    const E = window.__xrEmu;
+    E.setHead([0, 1.6, 0], E.quatYawPitch(0, -0.45));
+  });
+  await page.evaluate(() => window.__xrEmu.waitFrames(5));
+  await snap(page, '15-vr-globe.png', { x: 0, y: 0, width: 800, height: 800 });
+  // the dragons fly and stay inside the glass
+  const d0 = await page.evaluate(() => window.__cc.stage.asset.debug.dragons.map((d) => d.pos.toArray()));
+  await page.evaluate(() => window.__xrEmu.waitFrames(30));
+  const d1 = await page.evaluate(() => window.__cc.stage.asset.debug.dragons.map((d) => ({ p: d.pos.toArray(), state: d.state })));
+  const moved = d1.every((d, i) => Math.hypot(d.p[0] - d0[i][0], d.p[1] - d0[i][1], d.p[2] - d0[i][2]) > 0.5 || d.state === 'perched');
+  const inside = d1.every((d) => Math.hypot(d.p[0], d.p[1] - 69, d.p[2]) < 52);
+  check(moved && inside, `both dragons on the wing inside the glass (${d1.map((d) => d.state).join(', ')})`);
+  // pick it up and shake it
+  const c = await page.evaluate(() => window.__cc.stage.worldBounds().center.toArray());
+  await page.evaluate((c) => window.__xrEmu.setController('right', [c[0] + 0.05, c[1], c[2] + 0.1], [0, 0, 0, 1]), c);
+  await page.evaluate(() => window.__xrEmu.waitFrames(2));
+  await page.evaluate(() => window.__xrEmu.setButton('right', 1, true));
+  await page.evaluate(() => window.__xrEmu.waitFrames(3));
+  check((await state(page)).grabbed, 'grip picks the globe up');
+  const a0 = await page.evaluate(() => window.__cc.stage.asset.state.agitation);
+  await page.evaluate(async (c) => {
+    const E = window.__xrEmu;
+    for (let k = 0; k < 24; k++) {
+      E.setController('right', [c[0] + 0.05 + (k % 2 ? 0.12 : -0.12), c[1] + 0.25, c[2] + 0.1], [0, 0, 0, 1]);
+      await E.waitFrames(1);
+    }
+  }, c);
+  const a1 = await page.evaluate(() => window.__cc.stage.asset.state.agitation);
+  check(a1 > a0 + 0.2, `shaking it stirs up a blizzard (agitation ${a0.toFixed(2)} → ${a1.toFixed(2)})`);
+  await page.evaluate(() => window.__xrEmu.waitFrames(6));
+  await snap(page, '16-vr-globe-shaken.png', { x: 0, y: 0, width: 800, height: 800 });
+  await page.evaluate(() => window.__xrEmu.setButton('right', 1, false));
+  await page.evaluate(() => window.__xrEmu.press('right', 5, 3));
+  await page.waitForFunction(() => !window.__cc.stage.tween, null, { timeout: 60000 }).catch(() => {});
+  // step inside it
+  await page.evaluate(() => window.__cc.stage.setLife(true));
+  await page.waitForFunction(() => !window.__cc.stage.tween && window.__cc.stage.mode === 'life', null, { timeout: 90000 }).catch(() => {});
+  s = await state(page);
+  const roomHidden = await page.evaluate(() => !window.__cc.hall.group.children.find((o) => o.name === 'floor').visible);
+  check(s.stageMode === 'life' && Math.abs(s.scale - 1) < 0.01 && roomHidden, 'life size puts you on the bridge inside the globe');
+  await page.evaluate(() => window.__xrEmu.setHead([0, 1.6, 0], window.__xrEmu.quatYawPitch(0, 0.35)));
+  await page.evaluate(() => window.__xrEmu.waitFrames(6));
+  await snap(page, '17-vr-inside-globe.png', { x: 0, y: 0, width: 800, height: 800 });
+  await page.close();
+}
+
 // ------------------------------------------------------------ hold B to exit
 console.log('\n▶ Hold B/Y to exit');
 {

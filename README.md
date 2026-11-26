@@ -39,6 +39,36 @@ An antique clockwork music-box carousel ("Atelier Merveille, Paris, c. 1898", im
   <img src="docs/screenshots/13-vr-shelf.png" width="32%" alt="The shelf of curios, some still under dust cloths" />
 </p>
 
+## The second curio: *Le Royaume de Givre*
+
+A crystal snow globe on a base of near-black obsidian. Rock claws curl up around the glass, and clusters of glowing ice-blue and violet crystals sprout from the rock. A floating island kingdom drifts inside.
+
+<p align="center">
+  <img src="docs/screenshots/14-globe.png" width="49%" alt="The snow globe on the display table" />
+  <img src="docs/screenshots/19-dragon.png" width="49%" alt="A little dragon flying over the rooftops" />
+</p>
+<p align="center">
+  <img src="docs/screenshots/18-globe-town.png" width="49%" alt="The castle town up close: half-timbered houses, towers, the keep" />
+  <img src="docs/screenshots/16-vr-globe-shaken.png" width="49%" alt="Holding the globe in VR after shaking it" />
+</p>
+
+- **The island:** a chunk of rock with stalactites and glittering crystals underneath, sculpted as signed distance fields like the horses. It has three snowy terraces with cobbled lanes. A river runs through a ravine and spills off the cliff, and two smaller streams fall too. The water thins into drifting mist on the way down to the snowy floor.
+- **The town:** generated procedurally on the terraces.
+  - About forty houses with timber-framed, stone or plaster fronts, jettied upper floors, chimneys and the odd shop sign.
+  - Walls with crenellations and towers with coloured cone roofs, and a gatehouse with a portcullis. The river passes under the wall where it crosses the ravine.
+  - A keep with turrets and a tall tower, a great hall, a cathedral with a stained-glass rose window and a bell-tower spire, a windmill with turning sails, an arched bridge, a market well, snowy pines and street lanterns.
+  - Lantern-bearers walk the walls. Windows light up one by one as night falls.
+- **Two dragons,** Émeraude and Rubis, sculpted with horns, cheek spikes, fangs, jewelled slit-pupil eyes, a ridge of gold spines, a ridged belly and a spade tail. Scales are carved into the surface in the shader, and the wings flap in two hinged panels. Each runs its own behaviour loop: wander between the towers banking into turns, pick a free perch (the keep's lookout, a wall tower, the steeple, a base crystal), glide in and flare to land, rest with wings folded, look around, stretch, puff smoke or a little flame, then leap and take off. Shaking the globe startles them into the air.
+- **Shake it** in VR by grabbing and actually shaking it, or press *Shake*. Thousands of flakes kick up into a swirling vortex, drift down, and settle on the roofs and lanes, which slowly turn white.
+- **Turn the key crystal** on the front of the base for an original lullaby, *Berceuse du Givre*. The night deepens, the crystals glow brighter and an aurora ripples across the inside of the dome under twinkling stars.
+- **Life size** puts you on the bridge in the middle of the town, with snow falling around you, dragons overhead and the glass curving away as your sky.
+
+<p align="center">
+  <img src="docs/screenshots/15-vr-globe.png" width="32%" alt="The globe on the table in VR" />
+  <img src="docs/screenshots/17-vr-inside-globe.png" width="32%" alt="Standing on the bridge inside the globe at life size" />
+  <img src="docs/screenshots/13-vr-shelf.png" width="32%" alt="The shelf of curios" />
+</p>
+
 ## Try it
 
 **On a Meta Quest (2, 3, 3S, Pro):** open the published page in the Quest browser and press **Enter VR**. When GitHub Pages is enabled for this repository (Settings → Pages → *GitHub Actions*), the `Deploy to GitHub Pages` workflow publishes `main`.
@@ -57,14 +87,16 @@ The headset needs HTTPS for WebXR. The dev server makes a self-signed certificat
 | | VR (Touch controllers) | Desktop |
 |---|---|---|
 | Bring a curio to the table | point at its pedestal + **trigger** | click the pedestal |
-| Wind the spring | **trigger** on the brass key, or hold **A/X** | hold the key, the *Hold to wind* button, or **W** |
+| Wind it up | **trigger** on the key (brass key / key crystal), or hold **A/X** | hold the key, the *Hold to wind* button, or **W** |
+| Shake the snow globe | grab it and shake it, or the *Shake* button | the *Shake* button or **S** |
 | Pick it up | **grip** (near it or pointing at it) | – |
 | Scale and turn | **both grips**, pull apart or together | scroll to zoom right into the gears |
-| Put it back | **B/Y** or the *Reset* button | **R** |
+| Put it back | tap **B/Y** or the *Reset* button | **R** |
+| Exit | hold **B/Y**, or the *Exit* button | the *Exit* button |
 | Life size | the *Life size* button | the button or **L** |
 | Move | left stick walks, right stick snap-turns | drag to orbit |
 
-URL options: `?instant` skips the assembly show, `?asset=carousel` picks what loads first, `?empty` starts with an empty table.
+URL options: `?instant` skips the assembly show, `?asset=carousel` or `?asset=globe` picks what loads first, `?empty` starts with an empty table.
 
 ## How it stays fast on a headset
 
@@ -91,6 +123,7 @@ library/
                         tapered tubes, filigree cresting, bending panels onto cylinders
     materials.js        antique palette, MaterialKit (tracks + disposes), paint-mask shader
     bulbs.js            strings of bulbs with chase patterns and glow billboards
+    glowPoints.js       thousands of billboarded soft points in one draw call (snow, mist, sparks)
     textures.js         procedural canvas textures (wood, wear, lettering)
     asset.js            the asset contract: Emitter, Timeline (assembly scripts), easing
   carousel/
@@ -103,6 +136,20 @@ library/
     paintings.js        the hand-"painted" panels, roof, ceiling and deck
     score.js            Valse du Carrousel (also places the cylinder pins)
     dimensions.js       every mechanical dimension in one place
+  globe/
+    index.js            createGlobe(ctx, { lod }): night, wind, shaking, music, assembly
+    terrain.js          the island's terraces, ravine, streams and street plan (shared by mesher and town)
+    islandModel.js      island, inner floor and obsidian base as SDF layers (+ crystal anchors)
+    town.js             the procedural castle town, merged into a few meshes with town-wide shaders
+    townTextures.js     the painted façade atlas (with glowing windows), roof tiles, stone, rose window
+    dragonModel.js      the dragon as SDF layers (body with belly mask, horns, spines)
+    wings.js            two-panel hinged wings with finger bones and scalloped membranes
+    dragons.js          the two dragons: rendering + fly / land / perch / take-off behaviour
+    water.js            river, waterfalls and mist
+    snow.js             the snow simulation (shake, swirl, settle)
+    crystals.js         glowing crystal clusters
+    glass.js            fresnel glass, aurora curtains, stars
+    score.js            Berceuse du Givre
 ```
 
 ### Adding a curio
@@ -112,7 +159,7 @@ library/
 3. Call `await ctx.step()` between expensive pieces, and `ctx.progress(f, label)` to report.
 4. Add an entry to `library/index.js`. The shelf, loader, grab, scale, audio and spotlight all work automatically.
 
-The `dev/` pages are a small lab for sculpting. `dev/horse.html?yaw=0` renders the horse model alone, and `dev/carousel.html` renders a whole asset with no gallery around it.
+The `dev/` pages are a small lab for sculpting. `dev/horse.html?yaw=0` and `dev/dragon.html` render the creature models alone, and `dev/asset.html?asset=globe` renders a whole asset with no gallery around it.
 
 ## Tests
 
@@ -121,8 +168,19 @@ npm run lint
 npm test           # headless Chromium: desktop run, then an emulated Quest with two Touch controllers
 ```
 
-The test boots the gallery and plays through the real interactions: the assembly, winding with the keyboard and with a laser on the key (including haptic clicks), the music box playing, grabbing it and lifting it to the face, the two-handed stretch, putting it back, life size and walking, putting it away (checking GPU memory is freed), and bringing it back from the shelf. It also writes the screenshots in `docs/screenshots`.
+The test boots the gallery and plays through the real interactions:
+- the assembly
+- winding with the keyboard and with a laser on the key (including haptic clicks)
+- the music box playing
+- grabbing it and lifting it to the face, and the two-handed stretch
+- putting it back, life size and walking
+- putting it away (checking GPU memory is freed) and bringing it back from the shelf
+- entering VR off-centre and landing at the table
+- the Exit button and hold-B exit
+- for the snow globe: its town and perches, the dragons flying inside the glass, shaking it into a blizzard, and standing inside it at life size
+
+It also writes the screenshots in `docs/screenshots`.
 
 ## What's next
 
-The shelf already has dust cloths over a **brass orrery**, a **clockwork city** that builds itself (traffic, day and night, windows lighting up), a **singing bird box** and a **lighthouse** with waves and a turning lamp. Other ideas: a steam train on a figure-eight, a Ferris wheel, a marble run, a snow globe you shake, an aquarium, and a cuckoo clock.
+The shelf still has dust cloths over a **brass orrery**, a **clockwork city** that builds itself (traffic, day and night, windows lighting up) and a **lighthouse** with waves and a turning lamp. Other ideas: a steam train on a figure-eight, a Ferris wheel, a marble run, a snow globe you shake, an aquarium, and a cuckoo clock.

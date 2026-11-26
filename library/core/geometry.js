@@ -28,6 +28,19 @@ export function ringMat(a, r, y, rx = 0, rz = 0, s = 1) {
   return mat(Math.cos(a) * r, y, Math.sin(a) * r, rx, Math.PI / 2 - a, rz, s);
 }
 
+// attributes that survive normalisation (custom per-vertex data used by shaders)
+const KEEP = new Set(['position', 'normal', 'uv', 'color', 'build', 'lit']);
+
+/** fill a geometry with a constant attribute */
+export function constAttribute(geo, name, values) {
+  const n = geo.attributes.position.count;
+  const size = values.length;
+  const a = new Float32Array(n * size);
+  for (let i = 0; i < n; i++) for (let k = 0; k < size; k++) a[i * size + k] = values[k];
+  geo.setAttribute(name, new THREE.BufferAttribute(a, size));
+  return geo;
+}
+
 /** make any BufferGeometry compatible for merging: indexed, position/normal/uv[/color] */
 export function normalizeGeometry(g, color) {
   let geo = g;
@@ -40,7 +53,7 @@ export function normalizeGeometry(g, color) {
   if (!geo.attributes.normal) geo.computeVertexNormals();
   if (!geo.attributes.uv) geo.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(geo.attributes.position.count * 2), 2));
   for (const k of Object.keys(geo.attributes)) {
-    if (k !== 'position' && k !== 'normal' && k !== 'uv' && k !== 'color') geo.deleteAttribute(k);
+    if (!KEEP.has(k)) geo.deleteAttribute(k);
   }
   if (color !== undefined) {
     const c = color instanceof THREE.Color ? color : new THREE.Color(color);
@@ -66,10 +79,12 @@ export class GeoBag {
    * @param {THREE.Matrix4|null} matrix
    * @param {string} key material key
    * @param {THREE.ColorRepresentation} [color] vertex colour (for vertexColors materials)
+   * @param {Object<string, number[]>} [attrs] constant custom attributes, e.g. { build: [order, baseY] }
    */
-  add(geo, matrix, key, color) {
+  add(geo, matrix, key, color, attrs) {
     if (matrix) geo.applyMatrix4(matrix);
     normalizeGeometry(geo, color);
+    if (attrs) for (const [name, v] of Object.entries(attrs)) constAttribute(geo, name, Array.isArray(v) ? v : [v]);
     if (!this.parts.has(key)) this.parts.set(key, []);
     this.parts.get(key).push(geo);
     return this;
@@ -95,6 +110,11 @@ export class GeoBag {
       if (!mat) throw new Error(`GeoBag: no material for key "${key}"`);
       const hasColor = list.some((g) => g.attributes.color);
       if (hasColor) for (const g of list) if (!g.attributes.color) normalizeGeometry(g, 0xffffff);
+      // custom attributes: every part needs the same set to merge
+      for (const name of ['build', 'lit']) {
+        const ref = list.find((g) => g.attributes[name]);
+        if (ref) for (const g of list) if (!g.attributes[name]) constAttribute(g, name, new Array(ref.attributes[name].itemSize).fill(0));
+      }
       const merged = list.length === 1 ? list[0] : mergeGeometries(list, false);
       if (!merged) throw new Error(`GeoBag: merge failed for "${key}"`);
       if (list.length > 1) for (const g of list) g.dispose();

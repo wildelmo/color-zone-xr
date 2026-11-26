@@ -76,7 +76,10 @@ export class Shelf {
       const mod = await item.entry.load();
       item.module = mod;
       const asset = await mod.create(ctx, { lod: 'shelf' });
-      asset.root.scale.setScalar(SHELF_SCALE);
+      // fit the pedestal: shelf versions are about 30 cm across
+      const s = Math.min(SHELF_SCALE, 0.16 / mod.info.bounds.radius);
+      asset.root.scale.setScalar(s);
+      item.shelfScale = s;
       asset.root.traverse((o) => {
         if (o.isMesh) o.castShadow = false;
       });
@@ -100,7 +103,7 @@ export class Shelf {
         if (!it.onStage) {
           it.holder.rotation.y += dt * 0.15;
           it.asset.state.wind = 0.6; // previews never run down
-          it.asset.update(dt, { cameraLocal: null, worldScale: SHELF_SCALE });
+          it.asset.update(dt, { cameraLocal: null, worldScale: it.shelfScale || SHELF_SCALE });
         }
       }
     }
@@ -111,7 +114,6 @@ export class Shelf {
 const SHAPES = {
   orrery: [0.14, 0.26, 0],
   city: [0.2, 0.12, 0.8],
-  birdbox: [0.12, 0.12, 1],
   lighthouse: [0.08, 0.34, 0],
 };
 

@@ -15,8 +15,14 @@ app.onStatus = (text) => {
   statusTimer = setTimeout(() => hudStatus.classList.remove('show'), 4500);
   app.card.set(app.stage.asset ? app.stage.asset.info : null, text.length < 60 ? text : '');
 };
-app.onHeroLoaded = (asset) => app.card.set(asset.info);
-app.onHeroUnloaded = () => app.card.set(null);
+app.onHeroLoaded = (asset) => {
+  app.card.set(asset.info);
+  $('hud-shake').classList.toggle('hidden', !asset.shake);
+};
+app.onHeroUnloaded = () => {
+  app.card.set(null);
+  $('hud-shake').classList.add('hidden');
+};
 // the HTML toolbar is for desktop only; hide it while the headset is on
 app.onModeChange = (mode) => $('hud').classList.toggle('hidden', mode === 'xr');
 
@@ -67,6 +73,7 @@ windBtn.addEventListener('pointerdown', startWind);
 windBtn.addEventListener('pointerup', stopWind);
 windBtn.addEventListener('pointerleave', stopWind);
 $('hud-life').addEventListener('click', () => app.toggleLife());
+$('hud-shake').addEventListener('click', () => app.stage.asset?.shake?.(0.8));
 $('hud-exit').addEventListener('click', () => app.exit());
 $('btn-reopen').addEventListener('click', () => location.reload());
 $('hud-reset').addEventListener('click', () => app.stage.reset());

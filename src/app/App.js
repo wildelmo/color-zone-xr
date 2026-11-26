@@ -67,6 +67,7 @@ export class App {
       new Button3D({ id: 'life', label: 'Life size', glyph: '⤢', onPress: () => this.toggleLife() }),
       new Button3D({ id: 'reset', label: 'Reset', glyph: '⌂', onPress: () => this.stage.reset() }),
       new Button3D({ id: 'shelf', label: 'Put away', glyph: '✕', onPress: () => this.stage.unload() }),
+      new Button3D({ id: 'shake', label: 'Shake', glyph: '❄', onPress: () => this.stage.asset?.shake?.(0.8) }),
       new Button3D({ id: 'exit', label: 'Exit', glyph: '⏻', onPress: () => this.exit() }),
     ];
     this.panel = new ControlPanel(buttons);
@@ -243,7 +244,7 @@ export class App {
     this.onModeChange?.('desktop');
   }
 
-  placeRig(pos, yaw) {
+  placeRig(pos, yaw, focus = null) {
     if (this.mode === 'xr' && this.renderer.xr.isPresenting) {
       this.recenter(pos, yaw);
       return;
@@ -253,9 +254,10 @@ export class App {
     if (this.mode !== 'xr') {
       // desktop: move the orbit camera instead
       if (this.stage.mode === 'life') {
-        this.camera.position.set(pos.x, 1.6, pos.z);
-        this.desktop.focus(new THREE.Vector3(0, 2.3, 0), null, false);
-        this.desktop.orbit.maxDistance = 14;
+        // stand at the spot, eye height, looking at the focus point
+        const f = focus || new THREE.Vector3(pos.x - Math.sin(yaw) * 10, 3, pos.z - Math.cos(yaw) * 10);
+        this.desktop.moveTo(new THREE.Vector3(pos.x, 1.6, pos.z), f);
+        this.desktop.orbit.maxDistance = 60;
       } else {
         this.desktop.orbit.maxDistance = 7;
         this.desktop.focus(LAYOUT.table.clone().add(new THREE.Vector3(0, 0.18, 0)), 0.9);
@@ -325,6 +327,7 @@ export class App {
       this.card.mesh.visible = true;
     }
     this.panel.group.visible = xr;
+    this.panel.setVisible('shake', !!this.stage.asset?.shake);
     this.panel.buttons.find((b) => b.id === 'life').setActive(this.stage.mode === 'life');
     this.panel.update(dt);
 
