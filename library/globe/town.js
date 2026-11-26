@@ -329,6 +329,16 @@ export async function buildTown(kit, uniforms, { lod = 'hero', seed = 11, step =
     obstacle(mid.x, mid.z, Math.max(1.0, len * 0.6), wallTop + 0.8);
     // merlons on the outer edge
     const out = new THREE.Vector3(mid.x, 0, mid.z).normalize();
+    if (hero) {
+      // a cornice under the battlements and, now and then, an arrow slit
+      const cp = mid.clone().addScaledVector(out, 0.6);
+      bag.add(new THREE.BoxGeometry(len, 0.22, 0.2), mat(cp.x, wallTop - 0.12, cp.z, 0, yaw), 'stone', '#968f84', { build, lit: 2 });
+      if (i % 3 === 0 && !overRavine) {
+        const sp = mid.clone().addScaledVector(out, 0.56);
+        bag.add(new THREE.BoxGeometry(0.16, 1.0, 0.06), mat(sp.x, wallTop - 1.7, sp.z, 0, yaw), 'stone', '#2a2622', { build, lit: 2 });
+        bag.add(new THREE.BoxGeometry(0.5, 0.12, 0.08), mat(sp.x, wallTop - 1.7, sp.z, 0, yaw), 'stone', '#2a2622', { build, lit: 2 });
+      }
+    }
     for (let k = 0; k < Math.max(1, Math.round(len / 1.25)); k++) {
       const t = (k + 0.5) / Math.max(1, Math.round(len / 1.25));
       const p = p0.clone().lerp(p1, t).addScaledVector(out, 0.38);
@@ -344,6 +354,15 @@ export async function buildTown(kit, uniforms, { lod = 'hero', seed = 11, step =
     for (let k = 0; k < uvA.count; k++) uvA.setXY(k, uvA.getX(k) * r * 6.28 * 0.25, uvA.getY(k) * h * 0.25);
     bag.add(body, mat(x, g0 + h / 2, z), 'stone', stoneCol, { build, lit: 2 });
     bag.add(new THREE.CylinderGeometry(r + 0.3, r + 0.3, 0.6, hero ? 18 : 10), mat(x, g0 + h - 0.2, z), 'stone', '#968f84', { build, lit: 2 });
+    if (hero) {
+      // corbels carrying the overhanging parapet, and a string course lower down
+      const nc = Math.round(r * 7);
+      for (let k = 0; k < nc; k++) {
+        const a = ((k + 0.5) / nc) * Math.PI * 2;
+        bag.add(new THREE.BoxGeometry(0.22, 0.42, 0.34), mat(x + Math.cos(a) * (r + 0.1), g0 + h - 0.7, z + Math.sin(a) * (r + 0.1), 0, Math.PI / 2 - a), 'stone', '#8a847a', { build, lit: 2 });
+      }
+      bag.add(new THREE.CylinderGeometry(r + 0.08, r + 0.1, 0.18, 18, 1, true), mat(x, g0 + h * 0.55, z), 'stone', '#968f84', { build, lit: 2 });
+    }
     for (let k = 0; k < 10; k++) {
       const a = (k / 10) * Math.PI * 2;
       bag.add(new THREE.BoxGeometry(0.55, 0.65, 0.35), mat(x + Math.cos(a) * (r + 0.15), g0 + h + 0.4, z + Math.sin(a) * (r + 0.15), 0, Math.PI / 2 - a), 'stone', stoneCol, { build, lit: 2 });
@@ -627,6 +646,42 @@ export async function buildTown(kit, uniforms, { lod = 'hero', seed = 11, step =
         bag.add(cone, mat(x, y + (1.3 + tier * 0.9) * s, z, 0, rnd() * 3), 'wood', tier === 2 ? '#e8eef4' : '#22402e', { build, lit: 2 });
       }
       placed++;
+    }
+  }
+
+  // --------------------------------------------------------- market stalls
+  if (hero) {
+    const ga = T.gateA;
+    const pc = new THREE.Vector2(Math.cos(ga) * (T.edge - 5.5), Math.sin(ga) * (T.edge - 5.5));
+    const AWN = [['#c8b89a', '#8a2e2e'], ['#c8b89a', '#2f5a7a'], ['#c8b89a', '#3d6a3a']];
+    const GOODS = ['#c8402a', '#e0a040', '#8a5a2a', '#e8d8b0', '#5a8a3a', '#a03a5a'];
+    let n = 0;
+    for (let k = 0; k < 8 && n < 3; k++) {
+      // around the plaza's edge, away from the gate and the ring street
+      const a = ga + Math.PI * 0.55 + k * 0.42;
+      const x = pc.x + Math.cos(a) * 2.6, z = pc.y + Math.sin(a) * 2.6;
+      const rh = Math.hypot(x - hill.x, z - hill.y);
+      if (STREETS.rings.some((ring) => Math.abs(rh - ring.r) < ring.w * 0.5 + 0.9)) continue;
+      if (houses.some((h) => Math.hypot(h.x - x, h.z - z) < Math.max(h.w, h.d) * 0.5 + 1.0)) continue;
+      const y = topHeight(x, z);
+      const build = [orderOf(x, z) + 0.05, y];
+      const attrs = { build, lit: 2 };
+      // face the middle of the plaza
+      const sm = mat(x, y, z, 0, Math.atan2(pc.x - x, pc.y - z));
+      const box = (w, hh, d, bx, by, bz, key, col, rx = 0) => bag.add(new THREE.BoxGeometry(w, hh, d), sm.clone().multiply(mat(bx, by, bz, rx)), key, col, attrs);
+      box(1.6, 0.85, 0.75, 0, 0.42, 0, 'wood', '#6a4a2a');
+      box(1.7, 0.06, 0.85, 0, 0.87, 0, 'wood', '#4a3020');
+      for (const [px, pz] of [[-0.78, -0.35], [0.78, -0.35], [-0.78, 0.4], [0.78, 0.4]]) box(0.07, pz < 0 ? 2.15 : 1.8, 0.07, px, (pz < 0 ? 2.15 : 1.8) / 2, pz, 'wood', '#3a2618');
+      // a striped awning sloping toward the front
+      const [c0, c1] = AWN[n % AWN.length];
+      for (let st = 0; st < 6; st++) box(0.3, 0.04, 1.2, -0.75 + st * 0.3, 1.98, 0.08, 'wood', st % 2 ? c1 : c0, -0.32);
+      // goods on the counter, crates and a barrel beside
+      for (let g = 0; g < 7; g++) box(0.14, 0.1 + drnd() * 0.08, 0.14, -0.6 + g * 0.2, 0.96, 0.12 + (drnd() - 0.5) * 0.2, 'wood', GOODS[Math.floor(drnd() * GOODS.length)]);
+      box(0.5, 0.4, 0.5, 1.15, 0.2, 0.15, 'wood', '#7a5a34');
+      box(0.42, 0.34, 0.42, 1.12, 0.57, 0.12, 'wood', '#6a4a2a');
+      bag.add(new THREE.CylinderGeometry(0.24, 0.24, 0.62, 10), sm.clone().multiply(mat(-1.15, 0.31, 0.2)), 'wood', '#5a3a24', attrs);
+      for (const by of [0.1, 0.52]) bag.add(new THREE.CylinderGeometry(0.255, 0.255, 0.05, 10, 1, true), sm.clone().multiply(mat(-1.15, by, 0.2)), 'gold', undefined, attrs);
+      n++;
     }
   }
 

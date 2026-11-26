@@ -7,6 +7,7 @@ import { Emitter, Timeline, ease } from '../core/asset.js';
 import { G } from './dimensions.js';
 import { buildTown, townUniforms, townMaterial } from './town.js';
 import { buildSmoke } from './smoke.js';
+import { buildTownfolk } from './townfolk.js';
 import { buildDragons } from './dragons.js';
 import { buildGlass } from './glass.js';
 import { buildWater } from './water.js';
@@ -96,6 +97,8 @@ export async function createGlobe(ctx, { lod = 'hero' } = {}) {
   island.add(lights.build(kit));
   const smoke = hero ? buildSmoke(kit, town.chimneys) : null;
   if (smoke) island.add(smoke.mesh);
+  const folk = hero ? buildTownfolk(kit, U, townMaterial, { count: 26 }) : null;
+  if (folk) island.add(folk.mesh);
   await ctx.step();
 
   // ------------------------------------------------------------- dragons
@@ -276,7 +279,14 @@ export async function createGlobe(ctx, { lod = 'hero' } = {}) {
     dragons.update(dt, state.time, { startle: state.agitation });
     snow.update(dt, state.time, state.agitation);
     town.update(state.time, dt, state.speed);
-    smoke?.update(state.time, { night: state.night, agitation: state.agitation });
+    // the townsfolk come out and the fires are lit once the town has risen
+    const risen = U.uBuild.value > 0.92;
+    if (smoke) smoke.mesh.visible = risen;
+    if (folk) folk.mesh.visible = risen;
+    if (risen) {
+      smoke?.update(state.time, { night: state.night, agitation: state.agitation });
+      folk?.update(state.time);
+    }
     water.update(state.time, dt);
     crystals.update(state.time);
     glass.update(state.time, state.night);
