@@ -12,8 +12,13 @@ export const CATALOG = [
     tagline: 'Clockwork music-box carousel',
     load: () => import('./carousel/index.js').then((m) => ({ info: m.info, create: m.createCarousel })),
   },
+  {
+    id: 'globe',
+    name: 'Le Royaume de Givre',
+    tagline: 'A dragon kingdom in a snow globe',
+    load: () => import('./globe/index.js').then((m) => ({ info: m.info, create: m.createGlobe })),
+  },
   { id: 'orrery', name: 'Brass Orrery', tagline: 'Planets on nested arms', comingSoon: true },
   { id: 'city', name: 'Clockwork City', tagline: 'A little town that runs itself', comingSoon: true },
-  { id: 'birdbox', name: 'Singing Bird Box', tagline: 'A feathered automaton', comingSoon: true },
   { id: 'lighthouse', name: 'Lighthouse', tagline: 'Waves, gulls and a turning lamp', comingSoon: true },
 ];

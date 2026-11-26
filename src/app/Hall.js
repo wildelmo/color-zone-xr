@@ -147,5 +147,11 @@ export class Hall {
   setFurnitureVisible(v) {
     this.tableGroup.visible = v;
   }
+
+  /** hide the room itself (floor, walls, sconces) but keep the lights */
+  setRoomVisible(v) {
+    for (const c of this.group.children) if (!c.isLight && c !== this.key.target) c.visible = v;
+    if (v) this.tableGroup.visible = true;
+  }
 }
 

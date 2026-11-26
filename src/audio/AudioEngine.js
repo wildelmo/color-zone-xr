@@ -204,6 +204,56 @@ export class AudioEngine {
         this._noiseBurst(bus, t, 0.018, 2500 * pitch, 0.5 * gain, 'bandpass', 4);
         this._tone(bus, t, 1800 * pitch, 1500 * pitch, 0.02, 0.08 * gain, 'square');
         break;
+      case 'tinkle': {
+        // glassy: a few high, quiet music-box pings
+        for (let k = 0; k < 3; k++) {
+          const m = 88 + Math.floor(Math.random() * 14);
+          setTimeout(() => this.note(m, 0.25 * gain), k * 60 + Math.random() * 40);
+        }
+        break;
+      }
+      case 'whoosh': {
+        const ctx = this.ctx;
+        const s = ctx.createBufferSource();
+        s.buffer = this.noise;
+        const f = ctx.createBiquadFilter();
+        f.type = 'bandpass';
+        f.Q.value = 1.2;
+        f.frequency.setValueAtTime(300, t);
+        f.frequency.exponentialRampToValueAtTime(1800, t + 0.6);
+        f.frequency.exponentialRampToValueAtTime(400, t + 1.2);
+        const g = ctx.createGain();
+        g.gain.setValueAtTime(0, t);
+        g.gain.linearRampToValueAtTime(0.35 * gain, t + 0.4);
+        g.gain.exponentialRampToValueAtTime(0.0001, t + 1.3);
+        s.connect(f).connect(g).connect(bus);
+        s.start(t, Math.random() * 0.3);
+        s.stop(t + 1.4);
+        break;
+      }
+      case 'roar': {
+        // a small dragon's growl-and-flame: a falling buzzy tone and a hiss
+        const ctx = this.ctx;
+        const o = ctx.createOscillator();
+        o.type = 'sawtooth';
+        o.frequency.setValueAtTime(220 * pitch, t);
+        o.frequency.exponentialRampToValueAtTime(90 * pitch, t + 0.5);
+        const lp = ctx.createBiquadFilter();
+        lp.type = 'lowpass';
+        lp.frequency.value = 900;
+        const g = ctx.createGain();
+        g.gain.setValueAtTime(0, t);
+        g.gain.linearRampToValueAtTime(0.12 * gain, t + 0.05);
+        g.gain.exponentialRampToValueAtTime(0.0001, t + 0.55);
+        o.connect(lp).connect(g).connect(bus);
+        o.start(t);
+        o.stop(t + 0.6);
+        this._noiseBurst(bus, t + 0.05, 0.6, 2500, 0.18 * gain, 'bandpass', 0.8);
+        break;
+      }
+      case 'puff':
+        this._noiseBurst(bus, t, 0.35, 700 * pitch, 0.12 * gain, 'lowpass', 0.7);
+        break;
       case 'tick':
         this._noiseBurst(bus, t, 0.012, 3200 * pitch, 0.06 * gain, 'bandpass', 5);
         break;

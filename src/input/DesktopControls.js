@@ -45,6 +45,11 @@ export class DesktopControls {
     this.anim = { t: instant ? 1 : 0, fromT: this.orbit.target.clone(), toT: target, fromP: this.camera.position.clone(), toP: target.clone().add(dir) };
   }
 
+  /** glide the camera to an exact position, looking at target */
+  moveTo(position, target) {
+    this.anim = { t: 0, fromT: this.orbit.target.clone(), toT: target.clone(), fromP: this.camera.position.clone(), toP: position.clone() };
+  }
+
   pick(e) {
     const r = this.dom.getBoundingClientRect();
     this.mouse.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
@@ -102,6 +107,7 @@ export class DesktopControls {
     if (k === 'r') app.stage.reset();
     if (k === 'l') app.toggleLife();
     if (k === 'm') app.audio.setMuted(!app.audio.muted);
+    if (k === 's') app.stage.asset?.shake?.(0.8);
   }
 
   setWinding(on) {

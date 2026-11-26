@@ -1,11 +1,11 @@
 <!doctype html>
-<html><head><meta charset="utf-8"><title>carousel lab</title>
+<html><head><meta charset="utf-8"><title>asset lab</title>
 <script type="importmap">{"imports":{"three":"../vendor/three/three.module.min.js","three/addons/":"../vendor/three/addons/"}}</script>
 <style>html,body{margin:0;height:100%;background:#222}canvas{display:block}</style></head>
 <body><script type="module">
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
-import { createCarousel } from '../library/carousel/index.js';
+import { CATALOG } from '../library/index.js';
 const q = new URLSearchParams(location.search);
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setSize(innerWidth, innerHeight);
@@ -17,31 +17,41 @@ scene.background = new THREE.Color(0x231c18);
 const pm = new THREE.PMREMGenerator(renderer);
 scene.environment = pm.fromScene(new RoomEnvironment(), 0.04).texture;
 scene.environmentIntensity = 0.7;
-const cam = new THREE.PerspectiveCamera(+(q.get('fov') || 35), innerWidth / innerHeight, 0.05, 200);
+const cam = new THREE.PerspectiveCamera(+(q.get('fov') || 35), innerWidth / innerHeight, 0.05, 3000);
 const yaw = +(q.get('yaw') || 0.3), pitch = +(q.get('pitch') || 0.12), dist = +(q.get('dist') || 26);
 const ty = +(q.get('ty') || 4.8);
 cam.position.set(Math.sin(yaw) * Math.cos(pitch) * dist, ty + Math.sin(pitch) * dist, Math.cos(yaw) * Math.cos(pitch) * dist);
 cam.lookAt(+(q.get('tx') || 0), ty, +(q.get('tz') || 0));
-const dl = new THREE.DirectionalLight(0xfff0dd, 2.4); dl.position.set(8, 16, 10); dl.castShadow = true;
-dl.shadow.mapSize.set(2048, 2048); Object.assign(dl.shadow.camera, { left: -8, right: 8, top: 8, bottom: -8, near: 1, far: 40 }); dl.shadow.bias = -0.0005; dl.shadow.normalBias = 0.02;
+const L = +(q.get('light') || 8); const dl = new THREE.DirectionalLight(0xfff0dd, +(q.get('li') || 2.4)); dl.position.set(L, L * 2, L * 1.25); dl.castShadow = true;
+dl.shadow.mapSize.set(2048, 2048); Object.assign(dl.shadow.camera, { left: -L, right: L, top: L, bottom: -L, near: 1, far: L * 6 }); dl.shadow.bias = -0.0005; dl.shadow.normalBias = 0.02;
 scene.add(dl);
-const floor = new THREE.Mesh(new THREE.CircleGeometry(12, 64).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({ color: 0x4a1a1a, roughness: 0.9 }));
+const floor = new THREE.Mesh(new THREE.CircleGeometry(+(q.get('floor') || 12), 64).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({ color: 0x4a1a1a, roughness: 0.9 }));
 floor.receiveShadow = true; scene.add(floor);
 const t0 = performance.now();
 const ctx = { step: () => new Promise((r) => setTimeout(r, 0)), progress: (f, l) => console.log('progress', f, l) };
-const c = await createCarousel(ctx, { lod: q.get('lod') || 'hero' });
+const entry = CATALOG.find((e) => e.id === (q.get('asset') || 'carousel'));
+const mod = await entry.load();
+const c = await mod.create(ctx, { lod: q.get('lod') || 'hero' });
 scene.add(c.root);
 c.skipAssembly();
 c.wind(1);
+if (q.has('shake')) c.shake?.(1);
 const T = +(q.get('t') || 3);
-for (let i = 0; i < T * 30; i++) c.update(1 / 30, { cameraLocal: cam.position.clone(), worldScale: 1 / 25 });
+for (let i = 0; i < T * 30; i++) c.update(1 / 30, { cameraLocal: cam.position.clone(), worldScale: c.info.scale });
 renderer.render(scene, cam);
 renderer.render(scene, cam);
 let tris = 0, calls = renderer.info.render.calls; tris = renderer.info.render.triangles;
+renderer.render(scene, cam);
 window.__done = { ms: Math.round(performance.now() - t0), calls, tris, horseTris: c.stats.horseTris };
 window.__c = c;
+if (q.has('noglass')) c.root.getObjectByName('glass').visible = false;
+const vis = []; c.root.traverse((o) => { if (o.isMesh || o.isGroup) { let v = o; let ok = true; while (v) { if (!v.visible) ok = false; v = v.parent; } if (!ok) vis.push('HIDDEN ' + o.name); } });
+const isl = c.root.getObjectByName('island'); const bb = new THREE.Box3().setFromObject(c.root.getObjectByName('globe:base'));
+window.__dbg = { hidden: vis.slice(0, 10), islandY: isl.position.y, islandVisible: isl.visible, baseBox: [bb.min.toArray().map(Math.round), bb.max.toArray().map(Math.round)], baseColors: !!c.root.getObjectByName('globe:base').geometry.attributes.color, rootScale: c.root.scale.x };
 const per = [];
 c.root.traverse((o) => { if (o.isMesh && o.visible) { const n = (o.geometry.index ? o.geometry.index.count : o.geometry.attributes.position.count) / 3; const inst = o.isInstancedMesh ? o.count : 1; per.push([o.name, Math.round(n), inst, Math.round(n * inst)]); if (o.geometry.boundingSphere && isNaN(o.geometry.boundingSphere.radius)) per.push(['NAN', o.name]); } });
 per.sort((a, b) => b[3] - a[3]);
 window.__done.per = per.slice(0, 18); let meshes = 0, bulbs = 0; c.root.traverse((o) => { if (o.isMesh && o.visible && (!o.isInstancedMesh || o.count > 0)) meshes++; if (o.name === 'bulbs:glass') bulbs += o.count; }); window.__done.meshes = meshes; window.__done.bulbs = bulbs; window.__done.nan = per.filter((x) => x[0] === 'NAN');
+window.__done.dbg = window.__dbg;
+renderer.render(scene, cam);
 </script></body></html>

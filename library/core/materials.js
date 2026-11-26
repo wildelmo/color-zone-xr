@@ -113,12 +113,14 @@ export class MaterialKit {
  * scalloped blanket stays sharp even on a coarse mesh. A thin gold pinstripe
  * is painted just inside the edge.
  */
-export function paintMaskMaterial(kit, { roughness = 0.34, stripe = 0.03, stripeWidth = 0.006, stripeColor = '#d9a64c' } = {}) {
+export function paintMaskMaterial(kit, { roughness = 0.34, stripe = 0.03, stripeWidth = 0.006, stripeColor = '#d9a64c', scales = null } = {}) {
   const m = kit.standard({ color: 0xffffff, roughness, metalness: 0, vertexColors: true });
   const sc = new THREE.Color(stripeColor);
+  const useScales = !!scales;
   m.onBeforeCompile = (shader) => {
     shader.uniforms.uStripe = { value: new THREE.Vector3(stripe, stripeWidth, 0) };
     shader.uniforms.uStripeColor = { value: sc };
+    if (useScales) shader.uniforms.uScales = { value: new THREE.Vector3(1 / scales.size, scales.depth, scales.belly ?? 0.35) };
     shader.vertexShader = shader.vertexShader
       .replace(
         '#include <common>',
@@ -128,14 +130,16 @@ export function paintMaskMaterial(kit, { roughness = 0.34, stripe = 0.03, stripe
         attribute vec3 instanceTrim;
         varying float vPaint;
         varying vec3 vCoat;
-        varying vec3 vTrim;`,
+        varying vec3 vTrim;
+        ${useScales ? 'varying vec3 vObjPos; varying vec3 vObjNormal;' : ''}`,
       )
       .replace(
         '#include <color_vertex>',
         `#include <color_vertex>
         vPaint = paint;
         vCoat = instanceCoat;
-        vTrim = instanceTrim;`,
+        vTrim = instanceTrim;
+        ${useScales ? 'vObjPos = position; vObjNormal = normal;' : ''}`,
       );
     shader.fragmentShader = shader.fragmentShader
       .replace(
@@ -145,7 +149,8 @@ export function paintMaskMaterial(kit, { roughness = 0.34, stripe = 0.03, stripe
         uniform vec3 uStripeColor;
         varying float vPaint;
         varying vec3 vCoat;
-        varying vec3 vTrim;`,
+        varying vec3 vTrim;
+        ${useScales ? SCALE_GLSL : ''}`,
       )
       .replace(
         '#include <color_fragment>',
@@ -158,7 +163,52 @@ export function paintMaskMaterial(kit, { roughness = 0.34, stripe = 0.03, stripe
         paintCol = mix(paintCol, uStripeColor, stripe);
         diffuseColor.rgb *= paintCol;`,
       );
+    if (useScales) {
+      shader.fragmentShader = shader.fragmentShader.replace(
+        '#include <normal_fragment_maps>',
+        `#include <normal_fragment_maps>
+        {
+          // carved scales: triplanar hex domes in object space, as a bump
+          vec3 w = abs(normalize(vObjNormal));
+          w = pow(w, vec3(4.0));
+          w /= (w.x + w.y + w.z);
+          vec3 sp = vObjPos * uScales.x;
+          float h = hexDome(sp.yz) * w.x + hexDome(sp.xz) * w.y + hexDome(sp.xy) * w.z;
+          h *= mix(1.0, uScales.z, inside);
+          vec2 dHdxy = vec2(dFdx(h), dFdy(h)) * uScales.y;
+          normal = scalePerturb(-vViewPosition, normal, dHdxy, faceDirection);
+          // a hint of shadow in the gaps between scales
+          diffuseColor.rgb *= mix(0.78, 1.0, smoothstep(0.0, 0.5, h));
+        }`,
+      );
+    }
   };
-  m.customProgramCacheKey = () => 'paintMask1';
+  m.customProgramCacheKey = () => (useScales ? 'paintMaskScales1' : 'paintMask1');
   return m;
 }
+
+const SCALE_GLSL = /* glsl */ `
+  varying vec3 vObjPos;
+  varying vec3 vObjNormal;
+  uniform vec3 uScales;
+  // distance to the nearest hex-cell centre -> a rounded dome per cell
+  float hexDome(vec2 p) {
+    const vec2 s = vec2(1.0, 1.7320508);
+    vec4 hc = floor(vec4(p, p - vec2(0.5, 1.0)) / s.xyxy) + 0.5;
+    vec4 h = vec4(p - hc.xy * s, p - (hc.zw + 0.5) * s);
+    vec2 d = dot(h.xy, h.xy) < dot(h.zw, h.zw) ? h.xy : h.zw;
+    // shingled: the dome peaks toward one edge like overlapping scales
+    float r = length(d + vec2(0.0, 0.12));
+    return 1.0 - smoothstep(0.12, 0.56, r);
+  }
+  vec3 scalePerturb(vec3 surf_pos, vec3 surf_norm, vec2 dHdxy, float faceDirection) {
+    vec3 vSigmaX = normalize(dFdx(surf_pos.xyz));
+    vec3 vSigmaY = normalize(dFdy(surf_pos.xyz));
+    vec3 vN = surf_norm;
+    vec3 R1 = cross(vSigmaY, vN);
+    vec3 R2 = cross(vN, vSigmaX);
+    float fDet = dot(vSigmaX, R1) * faceDirection;
+    vec3 vGrad = sign(fDet) * (dHdxy.x * R1 + dHdxy.y * R2);
+    return normalize(abs(fDet) * surf_norm - vGrad);
+  }
+`;

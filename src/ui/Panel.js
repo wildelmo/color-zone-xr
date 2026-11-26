@@ -124,14 +124,31 @@ export class ControlPanel {
     const rim = new THREE.Mesh(new THREE.BoxGeometry(w + 0.01, 0.11, 0.006), new THREE.MeshStandardMaterial({ color: 0xc9973f, metalness: 1, roughness: 0.3 }));
     rim.position.z = -0.012;
     this.group.add(rim);
-    buttons.forEach((b, i) => {
-      b.mesh.position.set((i - (buttons.length - 1) / 2) * 0.075, -0.004, 0.001);
-      this.group.add(b.mesh);
-    });
+    this.board = board;
+    this.rim = rim;
+    buttons.forEach((b) => this.group.add(b.mesh));
+    this.layout();
+  }
+
+  /** lay out the visible buttons and size the board to fit */
+  layout() {
+    const vis = this.buttons.filter((b) => b.mesh.visible);
+    vis.forEach((b, i) => b.mesh.position.set((i - (vis.length - 1) / 2) * 0.075, -0.004, 0.001));
+    const w = vis.length * 0.075 + 0.03;
+    this.board.scale.x = w / this.board.geometry.parameters.width;
+    this.rim.scale.x = (w + 0.01) / this.rim.geometry.parameters.width;
+  }
+
+  setVisible(id, v) {
+    const b = this.buttons.find((x) => x.id === id);
+    if (b && b.mesh.visible !== v) {
+      b.mesh.visible = v;
+      this.layout();
+    }
   }
 
   get targets() {
-    return this.buttons.map((b) => b.mesh);
+    return this.buttons.filter((b) => b.mesh.visible).map((b) => b.mesh);
   }
 
   update(dt) {
@@ -186,7 +203,8 @@ export class InfoCard {
     const lines = [
       ['Trigger', 'point at a pedestal to bring a curio to the table; press buttons; hold on the key to wind it'],
       ['Grip', 'pick it up. Grab with both hands and pull apart to make it bigger'],
-      ['A / X', 'hold to wind the spring'],
+      ['A / X', 'hold to wind it up (the key)'],
+      ['Shake', 'shake the snow globe for real, or press Shake'],
       ['B / Y', 'tap to put it back on the table; hold to exit'],
       ['Sticks', 'left to walk, right to turn'],
     ];

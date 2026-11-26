@@ -1,0 +1,60 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>dragon lab</title>
+<script type="importmap">{"imports":{"three":"../vendor/three/three.module.min.js","three/addons/":"../vendor/three/addons/"}}</script>
+<style>html,body{margin:0;height:100%;background:#222}canvas{display:block}</style></head>
+<body><script type="module">
+import * as THREE from 'three';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { meshLayer, modelDetails } from '../library/core/sdfClient.js';
+import { MaterialKit, paintMaskMaterial } from '../library/core/materials.js';
+import { buildWing, wingMatrices } from '../library/globe/wings.js';
+const q = new URLSearchParams(location.search);
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+document.body.appendChild(renderer.domElement);
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x2c2a30);
+const pm = new THREE.PMREMGenerator(renderer);
+scene.environment = pm.fromScene(new RoomEnvironment(), 0.04).texture;
+const cam = new THREE.PerspectiveCamera(35, innerWidth / innerHeight, 0.01, 50);
+const yaw = +(q.get('yaw') || 0.6), pitch = +(q.get('pitch') || 0.25), dist = +(q.get('dist') || 6.5);
+const ty = +(q.get('ty') || 0.3), tx = +(q.get('tx') || -0.2);
+cam.position.set(tx + Math.sin(yaw) * Math.cos(pitch) * dist, ty + Math.sin(pitch) * dist, Math.cos(yaw) * Math.cos(pitch) * dist);
+cam.lookAt(tx, ty, 0);
+const dl = new THREE.DirectionalLight(0xfff0dd, 2.2); dl.position.set(2, 4, 3); scene.add(dl);
+const kit = new MaterialKit();
+const M = new URL('../library/globe/dragonModel.js', import.meta.url).href;
+const cell = +(q.get('cell') || 0.03);
+const coat = new THREE.Color(q.get('coat') || '#1f7a4a'), belly = new THREE.Color(q.get('belly') || '#e9d38a');
+const body = paintMaskMaterial(kit, { roughness: 0.3, stripe: 0.02, stripeWidth: 0.006, scales: { size: +(q.get('scale') || 0.045), depth: +(q.get('depth') || 0.03) } });
+const gold = kit.gold({ roughness: 0.25 });
+const spikeMat = kit.standard({ color: q.get('spike') || '#c9963a', roughness: 0.3, metalness: 0.6 });
+const t0 = performance.now();
+let tris = 0;
+const bodyGeo = await meshLayer(M, 'body', cell);
+const n = bodyGeo.attributes.position.count;
+bodyGeo.setAttribute('instanceCoat', new THREE.InstancedBufferAttribute(new Float32Array([coat.r, coat.g, coat.b]), 3));
+bodyGeo.setAttribute('instanceTrim', new THREE.InstancedBufferAttribute(new Float32Array([belly.r, belly.g, belly.b]), 3));
+const bm = new THREE.InstancedMesh(bodyGeo, body, 1); bm.setMatrixAt(0, new THREE.Matrix4()); scene.add(bm);
+tris += bodyGeo.index.count / 3;
+for (const [layer, mat, c] of [['horns', kit.standard({ color: '#efe3c4', roughness: 0.35 }), 0.5], ['spikes', spikeMat, 0.5]]) {
+  const g = await meshLayer(M, layer, cell * c); tris += g.index.count / 3; scene.add(new THREE.Mesh(g, mat));
+}
+const det = await modelDetails(M);
+for (const e of det.eyes) { const m = new THREE.Mesh(new THREE.SphereGeometry(e.r, 20, 14), kit.standard({ color: '#e8a21c', roughness: 0.05, metalness: 0.2, emissive: '#3a2000' })); m.position.set(...e.p); scene.add(m);
+  const pupil = new THREE.Mesh(new THREE.SphereGeometry(e.r * 0.55, 12, 8), kit.standard({ color: '#080605', roughness: 0.05 })); pupil.scale.set(0.35, 1, 0.35); pupil.position.set(e.p[0] + e.r * 0.25, e.p[1], e.p[2] + Math.sign(e.p[2]) * e.r * 0.9); scene.add(pupil); }
+const wing = buildWing(1);
+const memMat = kit.standard({ color: coat.clone().multiplyScalar(0.75), roughness: 0.55, side: THREE.DoubleSide });
+const boneMat = spikeMat;
+const flap = +(q.get('flap') || 0.35), fold = +(q.get('fold') || 0.25), sweep = +(q.get('sweep') || 0.1);
+for (const s of [1, -1]) {
+  const mi = new THREE.Matrix4(), mo = new THREE.Matrix4();
+  wingMatrices(new THREE.Matrix4(), new THREE.Vector3(...det.wingRoots[s > 0 ? 0 : 1]), s, flap, fold, sweep, mi, mo);
+  for (const [g, mat, m] of [[wing.inner.membrane, memMat, mi], [wing.inner.bones, boneMat, mi], [wing.outer.membrane, memMat, mo], [wing.outer.bones, boneMat, mo]]) {
+    const mesh = new THREE.Mesh(g, mat); mesh.matrixAutoUpdate = false; mesh.matrix.copy(m); scene.add(mesh); tris += g.index.count / 3;
+  }
+}
+renderer.render(scene, cam);
+window.__done = { ms: Math.round(performance.now() - t0), tris };
+</script></body></html>

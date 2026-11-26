@@ -18,6 +18,8 @@ export const info = {
     'A clockwork music-box carousel: 24 carved horses on barley-twist poles, driven by real crankshafts geared to a crown wheel. Wind the key and watch the pinned cylinder pluck the comb through the window.',
   scale: 1 / 22, // shown as a toy: about half a metre across
   bounds: { center: [0, 4.9, 0], radius: 6.6 },
+  // life size: deck at the floor, viewer just outside the platform
+  life: { floor: 1.52, viewer: [0, 7.4], yaw: 0, focus: [0, 3.8, 0] },
 };
 
 const RUN_SECONDS = 150; // a full wind runs this long
