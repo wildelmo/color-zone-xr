@@ -126,5 +126,3 @@ The test boots the gallery and plays through the real interactions: the assembly
 ## What's next
 
 The shelf already has dust cloths over a **brass orrery**, a **clockwork city** that builds itself (traffic, day and night, windows lighting up), a **singing bird box** and a **lighthouse** with waves and a turning lamp. Other ideas: a steam train on a figure-eight, a Ferris wheel, a marble run, a snow globe you shake, an aquarium, and a cuckoo clock.
-
-*Earlier projects in this repository (Color Zone XR, a WebXR painting playground, and Sea Train, a ride across a painted sea) are in the git history on `main`.*
