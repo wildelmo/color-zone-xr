@@ -76,6 +76,7 @@ export async function createCarousel(ctx, { lod = 'hero' } = {}) {
   // bulbs ride on the parts they're screwed into, so they arrive with them
   top.parts.canopy.add(turnBulbs.build(kit));
   column.group.add(fixedBulbs.build(kit));
+  const shadowPlan = hero ? planShadows(root, [column.group, top.parts.mech, herd.rods]) : null;
   await ctx.step();
 
   // ------------------------------------------------------------- state
@@ -238,6 +239,7 @@ export async function createCarousel(ctx, { lod = 'hero' } = {}) {
     plinth.update(state, dt);
     turnBulbs.update(state.time, state.speed);
     fixedBulbs.update(state.time, state.speed);
+    if (shadowPlan) shadowPlan.update(root.matrixWorld, view.worldScale ?? info.scale);
   }
 
   update(0);
@@ -251,6 +253,12 @@ export async function createCarousel(ctx, { lod = 'hero' } = {}) {
     interactions,
     timeline,
     stats: { horseTris: herd.tris },
+    debug: {
+      /** draw every horse (and its pole) at one level, 'hi' or 'lo', or null for the usual choice by distance */
+      forceHorseLevel(level) {
+        herd.force = level;
+      },
+    },
     update,
     /** start the assembly animation (hero only) */
     assemble() {
@@ -316,6 +324,69 @@ async function createMiniature(ctx) {
       disposeDeep(root);
       kit.dispose();
       events.clear();
+    },
+  };
+}
+
+/**
+ * Which parts of the hero cast shadows. A shadow map texel is about 2 cm of
+ * carousel at any scale, and on the table the shadow map's normal bias spans
+ * some 25 cm of carousel, so there the canopy's gilt (filigree cresting,
+ * frames, ribs, tassels) throws no shadow you can see: it casts only once the
+ * carousel is shown larger than FINE_CAST_SCALE (held and stretched, or life
+ * size, where the cresting and the frames shade the rounding boards). The
+ * bead mouldings round the plinth and deck keep casting: they line the
+ * mouldings below them with a shadow you can see even on the table. Flat or
+ * tiny things never cast (mirrors, painted panels, jewels), nor does the
+ * roof: a one-sided sheet seen from above, it is culled from the shadow pass
+ * and only cost triangles. The horses and poles cast through stand-ins
+ * (horses.js).
+ *
+ * The centre column, the machinery under the canopy and the crank rods sit
+ * where the light from above never reaches while the carousel stands upright
+ * (the painted ceiling and the inside of the rounding boards shade them), so
+ * they cast only while it is held tilted more than SHELTER_TILT from upright.
+ */
+const NEVER_CAST = new Set(['deck:mirror', 'canopy:mirror', 'canopy:scenes', 'canopy:jewel', 'canopy:roof', 'cupola:mirror']);
+const FINE_CAST = new Set(['canopy:gold']);
+const FINE_CAST_SCALE = 1.5 * info.scale;
+const SHELTER_TILT = Math.cos((20 * Math.PI) / 180);
+
+function planShadows(root, sheltered) {
+  const fine = [];
+  root.traverse((o) => {
+    if (!o.isMesh) return;
+    if (NEVER_CAST.has(o.name)) o.castShadow = false;
+    if (FINE_CAST.has(o.name)) fine.push(o);
+  });
+  const gated = [];
+  for (const g of sheltered) {
+    g.traverse((o) => {
+      // (the painted ceiling itself keeps casting: it shades the middle of the deck)
+      if (o.isMesh && (o.castShadow || o === g) && o.name !== 'mechanism:ceiling') gated.push(o);
+    });
+  }
+  let tilted = null, large = null;
+  return {
+    sheltered: gated,
+    fine,
+    /**
+     * @param {THREE.Matrix4} world the hero root's world matrix
+     * @param {number} scale how large it is shown (carousel units -> metres)
+     */
+    update(world, scale) {
+      const e = world.elements;
+      const up = e[5] / Math.max(1e-9, Math.hypot(e[4], e[5], e[6])); // world y of the carousel's axis
+      const t = up < SHELTER_TILT;
+      if (t !== tilted) {
+        tilted = t;
+        for (const m of gated) m.castShadow = t;
+      }
+      const l = scale > FINE_CAST_SCALE;
+      if (l !== large) {
+        large = l;
+        for (const m of fine) m.castShadow = l;
+      }
     },
   };
 }
