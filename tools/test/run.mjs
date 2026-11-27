@@ -12,10 +12,14 @@ import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { loadPlaywright, launchArgs } from './pw.mjs';
 import { serve } from './server.mjs';
+import { openQuest } from '../xr/quest.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const OUT = path.join(ROOT, 'docs', 'screenshots');
 const QUICK = process.argv.includes('--quick');
+// --only=desktop|quest|globe-desktop|globe|exit|iwer runs just that section
+const ONLY = (process.argv.find((a) => a.startsWith('--only=')) || '').slice(7);
+const want = (name) => !ONLY || ONLY === name;
 fs.mkdirSync(OUT, { recursive: true });
 
 const failures = [];
@@ -97,7 +101,7 @@ const look = (page, target, pos) =>
 
 // ------------------------------------------------------------------ desktop
 console.log('\n▶ Desktop: boot, assemble, wind, play');
-{
+if (want('desktop')) {
   const page = await newPage({ width: 1280, height: 800 });
   await page.waitForTimeout(800);
   await page.waitForFunction(() => window.__cc.stage.asset, null, { timeout: 120000 });
@@ -148,7 +152,8 @@ console.log('\n▶ Desktop: boot, assemble, wind, play');
   }
   // life size from the HUD
   await page.click('#hud-life');
-  await page.waitForFunction(() => !window.__cc.stage.tween && window.__cc.stage.mode === 'life', null, { timeout: 60000 }).catch(() => {});
+  // (life size fills the screen: on a software-GL runner each frame can take seconds)
+  await page.waitForFunction(() => !window.__cc.stage.tween && window.__cc.stage.mode === 'life', null, { timeout: 240000 }).catch(() => {});
   s = await state(page);
   check(s.stageMode === 'life' && Math.abs(s.scale - 1) < 0.01, `life size (scale ${s.scale.toFixed(2)})`);
   if (!QUICK) {
@@ -157,7 +162,7 @@ console.log('\n▶ Desktop: boot, assemble, wind, play');
     await snap(page, '08-life-size.png');
   }
   await page.click('#hud-life');
-  await page.waitForFunction(() => !window.__cc.stage.tween && window.__cc.stage.mode === 'toy', null, { timeout: 60000 }).catch(() => {});
+  await page.waitForFunction(() => !window.__cc.stage.tween && window.__cc.stage.mode === 'toy', null, { timeout: 240000 }).catch(() => {});
   s = await state(page);
   check(s.stageMode === 'toy' && Math.abs(s.scale - 1 / 22) < 0.002, 'back to toy size on the table');
   await page.close();
@@ -165,7 +170,7 @@ console.log('\n▶ Desktop: boot, assemble, wind, play');
 
 // --------------------------------------------------------------------- XR
 console.log('\n▶ Emulated Quest');
-{
+if (want('quest')) {
   const page = await newPage({ width: 1600, height: 800 }, { xr: true, query: '?instant' });
   await page.waitForFunction(() => !document.getElementById('btn-vr').disabled && window.__cc.stage.asset, null, { timeout: 120000 });
   // start "standing" somewhere odd in the room, facing sideways
@@ -359,7 +364,7 @@ console.log('\n▶ Emulated Quest');
 }
 
 // --------------------------------------------------- the snow globe, desktop
-if (!QUICK) {
+if (!QUICK && want('globe-desktop')) {
   console.log('\n▶ Le Royaume de Givre (snow globe), desktop shots');
   const page = await newPage({ width: 1280, height: 800 }, { query: '?asset=globe&instant' });
   await page.waitForFunction(() => window.__cc.stage.asset, null, { timeout: 240000 });
@@ -384,7 +389,7 @@ if (!QUICK) {
 
 // --------------------------------------------------------- the snow globe
 console.log('\n▶ Le Royaume de Givre (snow globe), emulated Quest');
-{
+if (want('globe')) {
   const page = await newPage({ width: 1600, height: 800 }, { xr: true, query: '?asset=globe&instant' });
   await page.waitForFunction(() => !document.getElementById('btn-vr').disabled && window.__cc.stage.asset, null, { timeout: 240000 });
   let s = await state(page);
@@ -428,21 +433,31 @@ console.log('\n▶ Le Royaume de Givre (snow globe), emulated Quest');
   await page.evaluate(() => window.__xrEmu.setButton('right', 1, false));
   await page.evaluate(() => window.__xrEmu.press('right', 5, 3));
   await page.waitForFunction(() => !window.__cc.stage.tween, null, { timeout: 60000 }).catch(() => {});
-  // step inside it
+  // up close: just what's inside, about 5 m across, floating with its streets at waist height
   await page.evaluate(() => window.__cc.stage.setLife(true));
   await page.waitForFunction(() => !window.__cc.stage.tween && window.__cc.stage.mode === 'life', null, { timeout: 90000 }).catch(() => {});
   s = await state(page);
-  const roomHidden = await page.evaluate(() => !window.__cc.hall.group.children.find((o) => o.name === 'floor').visible);
-  check(s.stageMode === 'life' && Math.abs(s.scale - 1) < 0.01 && roomHidden, 'life size puts you on the bridge inside the globe');
-  await page.evaluate(() => window.__xrEmu.setHead([0, 1.6, 0], window.__xrEmu.quatYawPitch(0, 0.35)));
+  const big = await page.evaluate(() => {
+    const a = window.__cc;
+    const island = a.stage.asset.root.getObjectByName('island');
+    const p = island.getWorldPosition(island.position.clone());
+    const glass = a.stage.asset.root.getObjectByName('glass:sphere');
+    return { islandY: p.y, room: a.hall.group.children.find((o) => o.name === 'floor').visible, glass: glass.visible, walkway: !!a.scene.getObjectByName('walkway') };
+  });
+  check(s.stageMode === 'life' && Math.abs(s.scale - 1 / 12) < 0.002 && !big.room && !big.glass && big.walkway && big.islandY > 0.8 && big.islandY < 1.1, `up close: just the island and town, no glass, at waist height (${big.islandY.toFixed(2)} m), on a walkway`);
+  await page.evaluate(() => window.__xrEmu.setHead([0, 1.6, 0], window.__xrEmu.quatYawPitch(0, -0.3)));
   await page.evaluate(() => window.__xrEmu.waitFrames(6));
-  await snap(page, '17-vr-inside-globe.png', { x: 0, y: 0, width: 800, height: 800 });
+  await snap(page, '17-vr-up-close.png', { x: 0, y: 0, width: 800, height: 800 });
+  // five simulated minutes of dragon flight: never inside a building, never outside the glass
+  const sim = await page.evaluate(() => window.__cc.stage.asset.debug.simulateDragons(300));
+  check(sim.insideBuilding === 0 && sim.outsideGlass === 0, `5 minutes of flight: ${sim.insideBuilding} frames in a building, ${sim.outsideGlass} outside the glass (closest pass ${sim.minClearance.toFixed(1)} m)`);
+  check(sim.perched.length >= 2, `the dragons landed and perched (${sim.perched.join(', ')})`);
   await page.close();
 }
 
 // ------------------------------------------------------------ hold B to exit
 console.log('\n▶ Hold B/Y to exit');
-{
+if (want('exit')) {
   const page = await newPage({ width: 800, height: 400 }, { xr: true, query: '?instant&empty' });
   await page.waitForFunction(() => !document.getElementById('btn-vr').disabled, null, { timeout: 60000 });
   await page.click('#btn-vr');
@@ -452,6 +467,69 @@ console.log('\n▶ Hold B/Y to exit');
   await page.evaluate(() => window.__xrEmu.setButton('right', 5, false));
   check(await page.evaluate(() => window.__cc.closed && !window.__cc.renderer.xr.isPresenting), 'holding B exits');
   await page.close();
+}
+
+// ------------------------------------------- Meta Quest 3 on Meta's emulator
+// The same visit again, on Meta's own WebXR emulator (IWER, from the
+// Immersive Web SDK) as a Quest 3 with Touch Plus controllers, driven only
+// the way a person would: aim, pull the trigger, squeeze, push the sticks.
+console.log("\n▶ Meta Quest 3 (Meta's IWER emulator), hands on the controllers");
+if (want('iwer')) {
+  const q = await openQuest(browser, url, { query: '?instant&empty', size: [960, 720], errors, out: OUT });
+  const run = (c) => q.run(c);
+  const st = () => run({ cmd: 'state' });
+  check((await run({ cmd: 'enter' })).presenting, 'enters VR as a Quest 3 with two Touch Plus controllers');
+  await run({ cmd: 'head', yaw: 0, pitch: -0.4 });
+  // point at the snow globe's pedestal column and pull the trigger
+  const ped = await run({ cmd: 'find', name: 'pedestal:globe' });
+  const aimed = await run({ cmd: 'aim', hand: 'right', at: [ped.center[0], 0.55, ped.center[2]] });
+  await run({ cmd: 'press', hand: 'right', button: 'trigger' });
+  await q.page.waitForFunction(() => window.__cc.stage.asset?.info.id === 'globe' && !window.__cc.stage.loading, null, { timeout: 300000 }).catch(() => {});
+  let s = await st();
+  check(s.asset === 'globe', `pointing at the globe's pedestal and pulling the trigger brings it to the table (ray hit ${aimed.ray[0]?.name})`);
+  // the panel's Up close button
+  await run({ cmd: 'aim', hand: 'right', at: 'button:life' });
+  await run({ cmd: 'press', hand: 'right', button: 'trigger' });
+  await q.page.waitForFunction(() => !window.__cc.stage.tween && window.__cc.stage.mode === 'life', null, { timeout: 90000 }).catch(() => {});
+  s = await st();
+  check(s.stageMode === 'life' && Math.abs(s.scale - 1 / 12) < 0.002, 'the Up close button blows up the island and town');
+  // walk round it on the walkway with the left stick, then look at the town
+  const p0 = s.head.pos;
+  const walked = await run({ cmd: 'stick', hand: 'left', x: 1, y: 0, ms: 1200 });
+  const p1 = walked.head.pos;
+  const r1 = Math.hypot(p1[0], p1[2]);
+  check(Math.hypot(p1[0] - p0[0], p1[2] - p0[2]) > 0.3 && r1 > 3.1 && r1 < 5.4, `the left stick walks you round it on the walkway (${Math.hypot(p1[0] - p0[0], p1[2] - p0[2]).toFixed(2)} m, ${r1.toFixed(1)} m out)`);
+  await run({ cmd: 'head', look: [0, 1.2, 0] });
+  await run({ cmd: 'shot', file: '20-quest3-up-close.png' });
+  // tap B: back on the table
+  await run({ cmd: 'press', hand: 'right', button: 'b' });
+  await q.page.waitForFunction(() => !window.__cc.stage.tween && window.__cc.stage.mode === 'toy', null, { timeout: 90000 }).catch(() => {});
+  s = await st();
+  check(s.stageMode === 'toy', 'a tap of B puts it back on the table');
+  // reach out, squeeze, lift it up and shake it
+  await run({ cmd: 'head', at: [0, 1.6, 0], look: 'proxy:hero' });
+  await run({ cmd: 'place', hand: 'right', at: 'proxy:hero' });
+  await run({ cmd: 'down', hand: 'right', button: 'grip' });
+  await run({ cmd: 'move', hand: 'right', to: [0.1, 1.35, -0.35], ms: 600 });
+  s = await st();
+  const held = await run({ cmd: 'find', name: 'proxy:hero' });
+  check(s.grabbed && Math.abs(held.center[1] - 1.35) < 0.05, `squeezing the grip picks it up and it follows your hand (${held.center.map((v) => v.toFixed(2)).join(', ')})`);
+  // lifting it briskly already stirs the snow; let it settle before the real shake
+  await q.page.waitForFunction(() => window.__cc.stage.asset.state.agitation < 0.25, null, { timeout: 120000 }).catch(() => {});
+  const a0 = await q.page.evaluate(() => window.__cc.stage.asset.state.agitation);
+  await run({ cmd: 'shake', hand: 'right', amplitude: 0.12, count: 16 });
+  const a1 = await q.page.evaluate(() => window.__cc.stage.asset.state.agitation);
+  check(a1 > a0 + 0.3, `shaking the controller shakes up the snow (${a0.toFixed(2)} → ${a1.toFixed(2)})`);
+  await run({ cmd: 'head', look: 'proxy:hero' });
+  await run({ cmd: 'shot', file: '21-quest3-shaken.png' });
+  await run({ cmd: 'up', hand: 'right', button: 'grip' });
+  // the panel's Exit button ends the session
+  await run({ cmd: 'head', at: [0, 1.6, 0], yaw: 0, pitch: -0.5 });
+  await run({ cmd: 'aim', hand: 'right', at: 'button:exit' });
+  await run({ cmd: 'press', hand: 'right', button: 'trigger' });
+  await q.page.waitForFunction(() => window.__cc.closed, null, { timeout: 60000 }).catch(() => {});
+  check(await q.page.evaluate(() => window.__cc.closed && !window.__cc.renderer.xr.isPresenting), 'the Exit button leaves VR');
+  await q.page.close();
 }
 
 console.log('\n▶ Errors');

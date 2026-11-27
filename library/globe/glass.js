@@ -124,6 +124,7 @@ export function buildGlass(kit, { lod }) {
   return {
     group,
     glass,
+    collar,
     uniforms,
     update(t, night) {
       auroraU.uTime.value = t;

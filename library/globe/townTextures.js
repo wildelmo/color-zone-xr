@@ -182,57 +182,239 @@ export function tileUV(style, kind) {
   return [u0, v0, u1, v1];
 }
 
-/** scalloped roof tiles (grey; tinted per roof by vertex colour) */
-export function roofTiles() {
-  const S = 256;
-  const c = makeCanvas(S, S);
-  const ctx = c.getContext('2d');
-  ctx.fillStyle = '#8a8a8a';
-  ctx.fillRect(0, 0, S, S);
-  const rnd = mulberry32(3);
-  const rows = 8, cols = 8;
-  for (let r = 0; r < rows; r++) {
-    for (let k = -1; k < cols + 1; k++) {
-      const x = ((k + (r % 2) * 0.5) * S) / cols, y = (r * S) / rows;
-      const v = 150 + rnd() * 70;
-      ctx.fillStyle = `rgb(${v},${v},${v})`;
-      ctx.beginPath();
-      ctx.moveTo(x, y);
-      ctx.lineTo(x + S / cols, y);
-      ctx.lineTo(x + S / cols, y + (S / rows) * 0.7);
-      ctx.arc(x + S / cols / 2, y + (S / rows) * 0.7, S / cols / 2, 0, Math.PI);
-      ctx.closePath();
-      ctx.fill();
-      ctx.strokeStyle = 'rgba(40,40,40,0.6)';
-      ctx.lineWidth = 2;
-      ctx.stroke();
-    }
+// --------------------------------------------------------------- surfaces
+// Pixel-built, tileable surface textures with matching normal maps, so the
+// stonework, roof tiles and timber catch the light like the real thing when
+// the town is blown up and you lean right in.
+
+// random lattices for the value noise, made once per (period, seed)
+const LATTICES = new Map();
+function lattice(p, seed) {
+  const key = p * 4096 + seed;
+  let g = LATTICES.get(key);
+  if (!g) {
+    g = new Float32Array(p * p);
+    const rnd = mulberry32(seed * 7919 + p);
+    for (let i = 0; i < g.length; i++) g[i] = rnd();
+    LATTICES.set(key, g);
   }
-  return canvasTexture(c, { repeat: [1, 1] });
+  return g;
+}
+/** tileable value noise on a period-p grid */
+function vnoise(x, y, p, seed) {
+  p = Math.max(1, Math.round(p));
+  const g = lattice(p, seed);
+  const xi = Math.floor(x), yi = Math.floor(y);
+  const xf = x - xi, yf = y - yi;
+  const u = xf * xf * (3 - 2 * xf), v = yf * yf * (3 - 2 * yf);
+  const x0 = ((xi % p) + p) % p, y0 = ((yi % p) + p) % p;
+  const x1 = (x0 + 1) % p, y1 = (y0 + 1) % p;
+  const a = g[y0 * p + x0], b = g[y0 * p + x1], c = g[y1 * p + x0], d = g[y1 * p + x1];
+  return a + (b - a) * u + (c - a) * v + (a - b - c + d) * u * v;
+}
+function fbm(x, y, p, seed, oct = 3) {
+  let s = 0, amp = 0.5, tot = 0;
+  for (let o = 0; o < oct; o++) {
+    s += amp * vnoise(x, y, p, seed + o * 13);
+    tot += amp;
+    x *= 2;
+    y *= 2;
+    p *= 2;
+    amp *= 0.5;
+  }
+  return s / tot;
 }
 
-/** castle stone blocks (grey; tinted by vertex colour) */
-export function stoneBlocks() {
-  const S = 512;
-  const c = makeCanvas(S, S);
-  const ctx = c.getContext('2d');
-  ctx.fillStyle = '#6b6b6b';
-  ctx.fillRect(0, 0, S, S);
-  const rnd = mulberry32(5);
-  const h = 32;
-  for (let y = 0; y < S; y += h) {
-    let x = (y / h) % 2 ? -30 : 0;
-    while (x < S) {
-      const w = 50 + rnd() * 40;
-      const v = 150 + rnd() * 60;
-      ctx.fillStyle = `rgb(${v},${v - 2},${v - 6})`;
-      ctx.fillRect(x + 2, y + 2, w - 4, h - 4);
-      // also draw the wrap-around copy so it tiles horizontally
-      ctx.fillRect(x + 2 - S, y + 2, w - 4, h - 4);
-      x += w;
+// finished surface canvases, kept so bringing the globe back out is instant
+const SURFACES = new Map();
+
+/** colour (sRGB) and normal (linear) textures from per-pixel callbacks */
+function surface(name, S, fn, { strength = 4, repeat = [1, 1] } = {}) {
+  const done = SURFACES.get(name);
+  if (done) return { map: canvasTexture(done.col, { repeat }), normal: canvasTexture(done.nor, { repeat, srgb: false }) };
+  const col = makeCanvas(S, S), nor = makeCanvas(S, S);
+  const cctx = col.getContext('2d'), nctx = nor.getContext('2d');
+  const ci = cctx.createImageData(S, S), ni = nctx.createImageData(S, S);
+  const H = new Float32Array(S * S);
+  const out = [0, 0, 0, 0];
+  for (let y = 0; y < S; y++) {
+    for (let x = 0; x < S; x++) {
+      fn(x, y, out);
+      const i = (y * S + x) * 4;
+      ci.data[i] = out[0];
+      ci.data[i + 1] = out[1];
+      ci.data[i + 2] = out[2];
+      ci.data[i + 3] = 255;
+      H[y * S + x] = out[3];
     }
   }
-  return canvasTexture(c, { repeat: [1, 1] });
+  // normals from the height field (wrapping, so they tile); canvas y runs down, v runs up
+  const k = 0.5 * strength;
+  for (let y = 0; y < S; y++) {
+    const yu = ((y - 1 + S) % S) * S, yd = ((y + 1) % S) * S, yc = y * S;
+    for (let x = 0; x < S; x++) {
+      const xl = (x - 1 + S) % S, xr = (x + 1) % S;
+      const dx = (H[yc + xr] - H[yc + xl]) * k;
+      const dy = (H[yd + x] - H[yu + x]) * k;
+      let nx = -dx, ny = dy, nz = 1;
+      const l = Math.hypot(nx, ny, nz);
+      nx /= l;
+      ny /= l;
+      nz /= l;
+      const i = (y * S + x) * 4;
+      ni.data[i] = (nx * 0.5 + 0.5) * 255;
+      ni.data[i + 1] = (ny * 0.5 + 0.5) * 255;
+      ni.data[i + 2] = (nz * 0.5 + 0.5) * 255;
+      ni.data[i + 3] = 255;
+    }
+  }
+  cctx.putImageData(ci, 0, 0);
+  nctx.putImageData(ni, 0, 0);
+  SURFACES.set(name, { col, nor });
+  return { map: canvasTexture(col, { repeat }), normal: canvasTexture(nor, { repeat, srgb: false }) };
+}
+
+/** split a row of length S into block widths between lo and hi that sum to S */
+function rowCuts(S, lo, hi, rnd) {
+  const ws = [];
+  let t = 0;
+  while (t < S) {
+    const w = lo + rnd() * (hi - lo);
+    ws.push(w);
+    t += w;
+  }
+  const k = S / t;
+  const cuts = [0];
+  for (const w of ws) cuts.push(cuts[cuts.length - 1] + w * k);
+  return cuts;
+}
+
+/**
+ * Roof tiles: rounded scallops in staggered rows, each lip standing proud
+ * of the row below (grey; tinted per roof by vertex colour). Canvas-down is
+ * down the slope.
+ */
+export function roofTiles() {
+  const S = 256, rows = 8, cols = 8;
+  const rh = S / rows, cw = S / cols;
+  const shade = [];
+  const rnd = mulberry32(3);
+  for (let i = 0; i < rows * (cols + 1); i++) shade.push(0.78 + rnd() * 0.3);
+  return surface(
+    'roof',
+    S,
+    (x, y, out) => {
+      // the topmost tile covering this pixel: tiles hang down 1.25 rows, upper rows lie over lower ones
+      let best = null;
+      for (const dr of [0, 1]) {
+        const r = Math.floor(y / rh) - dr;
+        const ty = (y - r * rh) / rh; // 0 at the tile's top, ~1.25 at its lip
+        const off = (((r % 2) + 2) % 2) * 0.5;
+        const c = Math.floor(x / cw - off);
+        const tx = x / cw - off - c; // 0..1 across the tile
+        const lip = 0.95 + 0.3 * Math.sqrt(Math.max(0, 1 - (2 * tx - 1) ** 2)); // rounded bottom edge
+        if (ty >= 0 && ty <= lip) {
+          best = { r, c, tx, ty, lip };
+          break; // dr = 0 is the row this pixel's top falls in; an upper row (dr = 1) lies on top only if it reaches down
+        }
+      }
+      // an upper row's lip overlaps the top of this row
+      const up = Math.floor(y / rh) - 1;
+      {
+        const ty = (y - up * rh) / rh;
+        const off = (((up % 2) + 2) % 2) * 0.5;
+        const c = Math.floor(x / cw - off);
+        const tx = x / cw - off - c;
+        const lip = 0.95 + 0.3 * Math.sqrt(Math.max(0, 1 - (2 * tx - 1) ** 2));
+        if (ty <= lip) best = { r: up, c, tx, ty, lip };
+      }
+      if (!best) {
+        out[0] = out[1] = out[2] = 60;
+        out[3] = 0;
+        return;
+      }
+      const { r, c, tx, ty, lip } = best;
+      const sh = shade[(((r % rows) + rows) % rows) * (cols + 1) + (((c % cols) + cols) % cols)];
+      const edge = Math.min(tx, 1 - tx) * cw; // px from the tile's sides
+      const toLip = (lip - ty) * rh; // px above the lip
+      const bevel = Math.min(1, edge / 2.5) * Math.min(1, toLip / 2.5);
+      const grain = 0.94 + 0.12 * fbm(x / 9, y / 9, S / 9, 31);
+      // a tile thickens toward its lip, which casts a little shadow on the row below
+      const h = 0.25 + 0.7 * Math.min(1, ty / lip) * bevel;
+      const v = 255 * sh * grain * (0.72 + 0.28 * bevel) * (0.88 + 0.12 * (ty / lip));
+      out[0] = out[1] = out[2] = Math.min(255, v);
+      out[3] = h;
+    },
+    { strength: 3 },
+  );
+}
+
+/**
+ * Castle stonework: courses of dressed blocks with chamfered edges, some
+ * weathered darker, frost settled in the mortar joints (grey; tinted by
+ * vertex colour).
+ */
+export function stoneBlocks() {
+  const S = 512, rowH = 32;
+  const rows = S / rowH;
+  const rnd = mulberry32(5);
+  const cuts = [];
+  const tones = [];
+  for (let r = 0; r < rows; r++) {
+    cuts.push(rowCuts(S, 46, 92, rnd));
+    tones.push(cuts[r].map(() => (rnd() < 0.12 ? 0.68 + rnd() * 0.1 : 0.84 + rnd() * 0.2)));
+  }
+  return surface(
+    'stone',
+    S,
+    (x, y, out) => {
+      const r = Math.floor(y / rowH);
+      const cs = cuts[r];
+      let k = 0;
+      while (k < cs.length - 2 && x >= cs[k + 1]) k++;
+      const dEdge = Math.min(x - cs[k], cs[k + 1] - x, y - r * rowH, (r + 1) * rowH - y);
+      const mortar = 1.6;
+      const face = Math.min(1, Math.max(0, (dEdge - mortar) / 3.2)); // chamfer
+      const chisel = fbm(x / 6, y / 6, S / 6, 7 + r, 2);
+      const tone = tones[r][k] * (0.92 + 0.16 * chisel);
+      if (dEdge < mortar) {
+        // frosty mortar
+        const m = 200 + 25 * chisel;
+        out[0] = m;
+        out[1] = m + 2;
+        out[2] = m + 6;
+        out[3] = 0;
+      } else {
+        const v = 215 * tone * (0.8 + 0.2 * face);
+        out[0] = v;
+        out[1] = v * 0.985;
+        out[2] = v * 0.955;
+        out[3] = 0.35 + 0.65 * face + (chisel - 0.5) * 0.25;
+      }
+    },
+    { strength: 2.2 },
+  );
+}
+
+/** wood grain for beams, shutters, doors and posts (light grey, tinted by vertex colour) */
+export function woodGrain() {
+  const S = 256;
+  return surface(
+    'wood',
+    S,
+    (x, y, out) => {
+      // fibres run along u; a slow wobble and the odd knot
+      const wob = fbm(x / 64, y / 16, 4, 3, 2) * 18;
+      const f = fbm(x / 40, (y + wob) / 1.6, S / 40, 9, 3);
+      const ring = 0.5 + 0.5 * Math.sin((y + wob) * 0.9 + f * 6);
+      const v = 205 + 38 * (f - 0.5) + 16 * (ring - 0.5);
+      out[0] = Math.min(255, v + 4);
+      out[1] = Math.min(255, v);
+      out[2] = Math.min(255, v - 6);
+      out[3] = ring * 0.6 + f * 0.4;
+    },
+    { strength: 1.4 },
+  );
 }
 
 /** a rose window of stained glass */
@@ -262,5 +444,112 @@ export function roseWindow() {
   ctx.beginPath();
   ctx.arc(0, 0, 20, 0, Math.PI * 2);
   ctx.fill();
+  return canvasTexture(c);
+}
+
+/**
+ * Painted shop signs, 4 x 2: key, boot, loaf, mug, fish, scissors, candle,
+ * pretzel, in gilt on dark boards with a border.
+ */
+export function signAtlas() {
+  const W = 128, H = 96;
+  const c = makeCanvas(W * 4, H * 2);
+  const ctx = c.getContext('2d');
+  const boards = ['#2a3a5a', '#5a2a22', '#2f4a32', '#3a2a1a'];
+  for (let i = 0; i < 8; i++) {
+    const x0 = (i % 4) * W, y0 = Math.floor(i / 4) * H;
+    ctx.save();
+    ctx.translate(x0, y0);
+    ctx.fillStyle = boards[i % 4];
+    ctx.fillRect(0, 0, W, H);
+    ctx.strokeStyle = '#d9a84e';
+    ctx.lineWidth = 4;
+    ctx.strokeRect(6, 6, W - 12, H - 12);
+    ctx.fillStyle = '#e8c070';
+    ctx.strokeStyle = '#e8c070';
+    ctx.lineWidth = 6;
+    ctx.lineCap = 'round';
+    ctx.translate(W / 2, H / 2);
+    ctx.beginPath();
+    if (i === 0) {
+      // key
+      ctx.arc(-26, 0, 12, 0, Math.PI * 2);
+      ctx.moveTo(-14, 0);
+      ctx.lineTo(30, 0);
+      ctx.moveTo(22, 0);
+      ctx.lineTo(22, 12);
+      ctx.moveTo(30, 0);
+      ctx.lineTo(30, 10);
+      ctx.stroke();
+    } else if (i === 1) {
+      // boot
+      ctx.moveTo(-10, -26);
+      ctx.lineTo(4, -26);
+      ctx.lineTo(4, 8);
+      ctx.lineTo(30, 14);
+      ctx.lineTo(30, 24);
+      ctx.lineTo(-12, 24);
+      ctx.closePath();
+      ctx.fill();
+    } else if (i === 2) {
+      // loaf with slashes
+      ctx.ellipse(0, 4, 34, 18, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = boards[2];
+      ctx.lineWidth = 3;
+      for (let k = -1; k <= 1; k++) {
+        ctx.beginPath();
+        ctx.moveTo(k * 14 - 6, -6);
+        ctx.lineTo(k * 14 + 6, 12);
+        ctx.stroke();
+      }
+    } else if (i === 3) {
+      // mug with foam
+      ctx.fillRect(-18, -14, 30, 36);
+      ctx.beginPath();
+      ctx.arc(-3, -16, 16, Math.PI, 0);
+      ctx.fill();
+      ctx.lineWidth = 6;
+      ctx.beginPath();
+      ctx.arc(14, 4, 10, -Math.PI / 2, Math.PI / 2);
+      ctx.stroke();
+    } else if (i === 4) {
+      // fish
+      ctx.ellipse(-4, 0, 26, 13, 0, 0, Math.PI * 2);
+      ctx.moveTo(18, 0);
+      ctx.lineTo(34, -14);
+      ctx.lineTo(34, 14);
+      ctx.closePath();
+      ctx.fill();
+    } else if (i === 5) {
+      // scissors
+      ctx.arc(-18, -12, 9, 0, Math.PI * 2);
+      ctx.moveTo(-9, 12);
+      ctx.arc(-18, 12, 9, 0, Math.PI * 2);
+      ctx.moveTo(-10, -8);
+      ctx.lineTo(32, 10);
+      ctx.moveTo(-10, 8);
+      ctx.lineTo(32, -10);
+      ctx.stroke();
+    } else if (i === 6) {
+      // candle with a flame
+      ctx.fillRect(-8, -6, 16, 32);
+      ctx.beginPath();
+      ctx.moveTo(0, -30);
+      ctx.quadraticCurveTo(10, -14, 0, -10);
+      ctx.quadraticCurveTo(-10, -14, 0, -30);
+      ctx.fill();
+    } else {
+      // pretzel
+      ctx.arc(-12, 0, 14, 0, Math.PI * 2);
+      ctx.moveTo(26, 0);
+      ctx.arc(12, 0, 14, 0, Math.PI * 2);
+      ctx.moveTo(-6, 18);
+      ctx.lineTo(0, 26);
+      ctx.lineTo(6, 18);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
   return canvasTexture(c);
 }

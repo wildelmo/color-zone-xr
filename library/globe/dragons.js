@@ -21,14 +21,15 @@ const LIVERY = [
  *
  *   fly       wander between random points around the towers, banking into
  *             turns, beating harder when climbing, gliding when descending
- *   approach  pick a free perch (keep tower, steeple, a wall tower, a base
- *             crystal), circle in, glide down and flare the wings to land
+ *   approach  pick a free perch (the keep's lookout, the steeple, a wall
+ *             tower), fly to a point above it, then drop down and flare to land
  *   perched   fold the wings, look around, shift, stretch, puff smoke/flame
  *   takeoff   crouch, leap, a burst of strong beats, climb away
  *
  * Shaking the globe startles any perched dragon into the air.
  */
-export async function buildDragons(ctx, kit, { lod, perches }) {
+export async function buildDragons(ctx, kit, { lod, perches, heightAt = () => -1e6 }) {
+  // heightAt(x, z, dilated) -> highest solid thing in asset space (roofs, towers, ground)
   const hero = lod === 'hero';
   const cell = hero ? 0.036 : 0.075;
   const det = await modelDetails(MODEL);
@@ -53,7 +54,7 @@ export async function buildDragons(ctx, kit, { lod, perches }) {
     horns: kit.standard({ color: 0xffffff, roughness: 0.35, metalness: 0.1 }),
     spikes: kit.standard({ color: 0xffffff, roughness: 0.28, metalness: 0.75 }),
     eyes: kit.standard({ color: 0xffffff, roughness: 0.05, metalness: 0.2, vertexColors: true, emissive: 0x2a1600 }),
-    membrane: kit.standard({ color: 0xffffff, roughness: 0.6, side: THREE.DoubleSide }),
+    membrane: wingSkin(kit.standard({ color: 0xffffff, roughness: 0.6, side: THREE.DoubleSide })),
     bones: kit.standard({ color: 0xffffff, roughness: 0.3, metalness: 0.7 }),
   };
   const group = new THREE.Group();
@@ -90,15 +91,17 @@ export async function buildDragons(ctx, kit, { lod, perches }) {
   const center = new THREE.Vector3(0, G.islandY + 16, 0);
   const rnd = Math.random;
   const randomWaypoint = (d) => {
-    for (let k = 0; k < 20; k++) {
+    for (let k = 0; k < 30; k++) {
       const a = rnd() * Math.PI * 2;
-      const r = 12 + rnd() * 26;
-      const y = G.islandY + 12 + rnd() * 26;
-      const p = new THREE.Vector3(Math.cos(a) * r, y, Math.sin(a) * r);
-      if (p.distanceTo(new THREE.Vector3(0, G.globeY, 0)) < G.globeR - 9 && (!d || p.distanceTo(d.pos) > 12)) return p;
+      const r = 6 + rnd() * 30;
+      const p = new THREE.Vector3(Math.cos(a) * r, 0, Math.sin(a) * r);
+      // well clear of every roof and spire below it
+      p.y = Math.max(G.islandY + 12, heightAt(p.x, p.z, true) + 7) + rnd() * 16;
+      if (p.distanceTo(globeC) < G.globeR - 13 && (!d || p.distanceTo(d.pos) > 12)) return p;
     }
-    return center.clone();
+    return center.clone().add(new THREE.Vector3(0, 20, 0));
   };
+  const globeC = new THREE.Vector3(0, G.globeY, 0);
   const dragons = LIVERY.map((liv, i) => {
     const a = i * Math.PI;
     return {
@@ -121,7 +124,8 @@ export async function buildDragons(ctx, kit, { lod, perches }) {
       headYaw: 0,
       bob: 0,
       matrix: new THREE.Matrix4(),
-      enter: 1, // assembly: 0 = still flying in from outside
+      enter: 1, // assembly: grows from 0 to full size in place
+      phase: 'cruise', // approach sub-phase: 'cruise' to the hover point, then 'descend'
       nextPuff: 3 + rnd() * 4,
     };
   });
@@ -143,7 +147,6 @@ export async function buildDragons(ctx, kit, { lod, perches }) {
   const _mi = new THREE.Matrix4(), _mo = new THREE.Matrix4();
   const roots = det.wingRoots.map((r) => new THREE.Vector3(...r));
   const mouth = new THREE.Vector3(...det.mouth);
-  const globeC = new THREE.Vector3(0, G.globeY, 0);
 
   function steer(d, desired, dt, maxTurn, speed) {
     // turn the velocity toward `desired` (a direction) at a limited rate
@@ -160,14 +163,46 @@ export async function buildDragons(ctx, kit, { lod, perches }) {
     v.copy(nd).multiplyScalar(sp);
   }
 
+  const _ahead = new THREE.Vector3();
   function avoid(d, desired) {
-    // stay inside the glass and off the island
+    // stay inside the glass
     const fromC = d.pos.clone().sub(globeC);
     const r = fromC.length();
-    if (r > G.globeR - 12) desired.addScaledVector(fromC.normalize(), -(r - (G.globeR - 12)) * 0.5);
+    if (r > G.globeR - 14) desired.addScaledVector(fromC.normalize(), -(r - (G.globeR - 14)) * 0.6);
+    // look ahead along the flight path and climb over anything in the way
+    let need = 0;
+    for (const t of [0.35, 0.8, 1.4, 2.0]) {
+      _ahead.copy(d.pos).addScaledVector(d.vel, t);
+      const ceil = heightAt(_ahead.x, _ahead.z, true) + 2.5;
+      need = Math.max(need, ceil - _ahead.y);
+    }
+    if (need > 0) {
+      desired.y += need * 0.6 + 0.5;
+      d.vel.y = Math.max(d.vel.y, Math.min(6, need * 1.5));
+    }
+    // never under the island
     const rh = Math.hypot(d.pos.x, d.pos.z);
-    if (rh < G.edgeR + 4 && d.pos.y < G.islandY + 14 && d.state === 'fly') desired.y += (G.islandY + 14 - d.pos.y) * 0.4;
-    if (rh < 6 && d.pos.y < G.islandY + 36 && d.state === 'fly') desired.addScaledVector(new THREE.Vector3(d.pos.x, 0, d.pos.z).normalize(), 2);
+    if (rh < G.edgeR + 6 && d.pos.y < G.islandY + 10) desired.y += (G.islandY + 10 - d.pos.y) * 0.4;
+  }
+
+  /** hard limits: never inside a building, never outside the glass */
+  function constrain(d) {
+    const fromC = d.pos.clone().sub(globeC);
+    const r = fromC.length();
+    const maxR = G.globeR - 5;
+    if (r > maxR) {
+      fromC.multiplyScalar(1 / r);
+      d.pos.copy(globeC).addScaledVector(fromC, maxR);
+      const out = d.vel.dot(fromC);
+      if (out > 0) d.vel.addScaledVector(fromC, -out * 1.5);
+    }
+    if (d.state !== 'perched' && !(d.state === 'approach' && d.phase === 'descend')) {
+      const floor = heightAt(d.pos.x, d.pos.z, false) + 1.6;
+      if (d.pos.y < floor && d.pos.y > G.islandY - 3) {
+        d.pos.y = floor;
+        d.vel.y = Math.max(d.vel.y, 2);
+      }
+    }
   }
 
   function puff(d, flame) {
@@ -204,25 +239,45 @@ export async function buildDragons(ctx, kit, { lod, perches }) {
           d.perch = claim(d);
           if (d.perch) {
             d.state = 'approach';
+            d.phase = 'cruise';
             d.t = 0;
           } else d.timer = 6;
         }
       } else if (d.state === 'approach') {
         const goal = d.perch.p.clone().add(new THREE.Vector3(0, 1.0, 0));
-        const to = goal.clone().sub(d.pos);
-        const dist = to.length();
-        // come in from above and slow down near the perch
-        const desired = to.clone().normalize();
-        if (dist > 14) desired.y += 0.25;
-        avoid(d, desired);
-        steer(d, desired, dt, dist < 10 ? 2.5 : 1.3, THREE.MathUtils.clamp(dist * 0.55, 2.2, 9));
-        if (dist < 1.2 || d.t > 25) {
-          d.state = 'perched';
-          d.t = 0;
-          d.timer = 8 + rnd() * 10;
-          d.pos.copy(goal);
-          d.vel.multiplyScalar(0.01);
-          d.yaw = Math.atan2(-to.z, to.x);
+        const hover = goal.clone().add(new THREE.Vector3(0, 7, 0));
+        if (d.phase === 'cruise') {
+          // fly to a point well above the perch (over everything around it)
+          const to = hover.clone().sub(d.pos);
+          const dist = to.length();
+          const desired = to.clone().normalize();
+          avoid(d, desired);
+          steer(d, desired, dt, dist < 12 ? 2.2 : 1.2, THREE.MathUtils.clamp(dist * 0.6, 2.5, 9));
+          if (dist < 2.5) {
+            d.phase = 'descend';
+            d.t = 0;
+          }
+        } else {
+          // drop straight down onto it, braking with the wings
+          const to = goal.clone().sub(d.pos);
+          const dist = to.length();
+          const v = to.multiplyScalar(Math.min(2.2, 1.6 + dist * 0.1));
+          if (v.length() > 3.5) v.setLength(3.5);
+          d.vel.lerp(v, Math.min(1, dt * 4));
+          if (dist < 0.35 || d.t > 8) {
+            d.state = 'perched';
+            d.t = 0;
+            d.timer = 8 + rnd() * 10;
+            d.pos.copy(goal);
+            d.vel.set(0, 0, 0);
+            d.yaw = d.perch.yaw ?? d.yaw;
+          }
+        }
+        if (d.state === 'approach' && d.t > 30) {
+          // couldn't get there: give up and keep flying
+          d.state = 'fly';
+          d.perch = null;
+          d.timer = 6;
         }
       } else if (d.state === 'perched') {
         d.vel.set(0, 0, 0);
@@ -238,15 +293,19 @@ export async function buildDragons(ctx, kit, { lod, perches }) {
         if (d.timer <= 0 || startle > 0.3) {
           d.state = 'takeoff';
           d.t = 0;
+          // leap straight up off the perch, then away
           const away = new THREE.Vector3(Math.cos(d.yaw), 0, -Math.sin(d.yaw));
-          d.vel.copy(away).multiplyScalar(3).add(new THREE.Vector3(0, 7, 0));
+          d.vel.copy(away).multiplyScalar(0.8).add(new THREE.Vector3(0, 7.5, 0));
           d.lastPerch = d.perch;
           d.perch = null;
         }
       } else if (d.state === 'takeoff') {
-        const desired = d.vel.clone().normalize().add(new THREE.Vector3(0, 0.6, 0));
-        avoid(d, desired);
-        steer(d, desired, dt, 1.2, 8);
+        const desired = d.t < 1.1 ? new THREE.Vector3(0, 1, 0) : d.vel.clone().normalize().add(new THREE.Vector3(0, 0.5, 0));
+        if (d.t < 1.1) d.vel.lerp(new THREE.Vector3(d.vel.x, 7.5, d.vel.z), Math.min(1, dt * 3));
+        else {
+          avoid(d, desired);
+          steer(d, desired, dt, 1.2, 8);
+        }
         if (d.t > 2.2) {
           d.state = 'fly';
           d.t = 0;
@@ -255,6 +314,7 @@ export async function buildDragons(ctx, kit, { lod, perches }) {
         }
       }
       if (d.state !== 'perched') d.pos.addScaledVector(d.vel, dt);
+      constrain(d);
 
       // ---- wings
       const climbing = d.vel.y;
@@ -266,7 +326,7 @@ export async function buildDragons(ctx, kit, { lod, perches }) {
         d.sweep += ((-0.55 + stretch * 0.4) - d.sweep) * Math.min(1, dt * 4);
         d.bob = Math.sin(d.t * 1.6) * 0.04;
       } else {
-        const landing = d.state === 'approach' && d.perch && d.pos.distanceTo(d.perch.p) < 9;
+        const landing = d.state === 'approach' && d.phase === 'descend';
         const beat = d.state === 'takeoff' || landing ? 2.2 : climbing > 1 ? 1.6 : climbing < -1.5 ? 0 : 0.9;
         d.flapPhase += dt * Math.PI * 2 * (beat > 0 ? 1.1 + beat * 0.5 : 0);
         const amp = beat > 0 ? 0.45 + beat * 0.2 : 0.05;
@@ -283,8 +343,10 @@ export async function buildDragons(ctx, kit, { lod, perches }) {
       if (d.state !== 'perched') {
         const v = d.vel;
         const h = Math.hypot(v.x, v.z);
-        if (h > 0.2) d.yaw = Math.atan2(-v.z, v.x);
-        const pitchT = THREE.MathUtils.clamp(Math.atan2(v.y, Math.max(h, 0.1)), -0.6, 0.7) + (d.state === 'approach' && d.perch && d.pos.distanceTo(d.perch.p) < 6 ? 0.45 : 0);
+        const descending = d.state === 'approach' && d.phase === 'descend';
+        if (h > 0.6 && !descending) d.yaw = Math.atan2(-v.z, v.x);
+        else if (descending && d.perch && d.perch.yaw !== undefined) d.yaw += (d.perch.yaw - d.yaw) * Math.min(1, dt * 2);
+        const pitchT = descending ? 0.35 : THREE.MathUtils.clamp(Math.atan2(v.y, Math.max(h, 0.1)), -0.6, 0.7);
         d.pitch += (pitchT - d.pitch) * Math.min(1, dt * 3);
       } else {
         d.pitch += (0.05 - d.pitch) * Math.min(1, dt * 3);
@@ -294,8 +356,9 @@ export async function buildDragons(ctx, kit, { lod, perches }) {
       _e.set(d.roll * 0.8, d.yaw + d.headYaw * 0.25, d.pitch, 'YZX');
       _q.setFromEuler(_e);
       // assembly: fly in from far outside the glass
-      const enterOff = (1 - d.enter) * 60;
-      _p.copy(d.pos).add(new THREE.Vector3(0, d.bob + enterOff * 0.5, 0)).addScaledVector(new THREE.Vector3(Math.cos(d.i * 2.4), 0, Math.sin(d.i * 2.4)), enterOff);
+      _p.copy(d.pos);
+      _p.y += d.bob;
+      _s.setScalar(SCALE * Math.max(0.001, d.enter));
       d.matrix.compose(_p, _q, _s);
       meshes.body.setMatrixAt(d.i, d.matrix);
       meshes.horns.setMatrixAt(d.i, d.matrix);
@@ -331,6 +394,49 @@ export async function buildDragons(ctx, kit, { lod, perches }) {
     fx.commit(n);
   }
 
+  /** run the behaviour for `seconds` without rendering; report violations */
+  function simulate(seconds, dt = 1 / 30) {
+    const report = { frames: 0, insideBuilding: 0, outsideGlass: 0, perched: new Set(), minClearance: Infinity };
+    for (let t = 0; t < seconds; t += dt) {
+      update(dt, t);
+      report.frames++;
+      for (const d of dragons) {
+        if (d.state === 'perched') report.perched.add(d.perch?.kind + ':' + d.i);
+        if (d.pos.distanceTo(globeC) > G.globeR - 3) report.outsideGlass++;
+        if (d.state === 'fly' || d.state === 'takeoff' || (d.state === 'approach' && d.phase === 'cruise')) {
+          const c = d.pos.y - heightAt(d.pos.x, d.pos.z, false);
+          if (d.pos.y > G.islandY - 3) report.minClearance = Math.min(report.minClearance, c);
+          if (c < 0.5 && d.pos.y > G.islandY - 3) report.insideBuilding++;
+        }
+      }
+    }
+    return { ...report, perched: [...report.perched] };
+  }
+
   update(0, 0);
-  return { group, dragons, update, events, liveries: LIVERY };
+  return { group, dragons, update, events, simulate, liveries: LIVERY };
+}
+
+/**
+ * Wing skin: radial veins running out from the bones, a darker trailing
+ * edge and a lighter middle where the membrane is thinnest (uv: across the
+ * panel, out from its root).
+ */
+function wingSkin(m) {
+  m.defines = { ...(m.defines || {}), USE_UV: '' };
+  m.onBeforeCompile = (shader) => {
+    shader.fragmentShader = shader.fragmentShader.replace(
+      '#include <color_fragment>',
+      `#include <color_fragment>
+      {
+        float across = fract(vUv.x * 4.0);
+        float vein = (1.0 - smoothstep(0.0, 0.06, abs(across - 0.5))) * smoothstep(0.05, 0.35, vUv.y) * (1.0 - smoothstep(0.85, 1.0, vUv.y));
+        float edge = smoothstep(0.82, 1.0, vUv.y);
+        float thin = sin(clamp(vUv.y, 0.0, 1.0) * 3.14159) * (0.6 + 0.4 * sin(across * 3.14159));
+        diffuseColor.rgb *= mix(1.0, 0.5, vein) * mix(1.0, 0.65, edge) * (0.82 + 0.3 * thin);
+      }`,
+    );
+  };
+  m.customProgramCacheKey = () => 'dragon:wing-skin';
+  return m;
 }

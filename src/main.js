@@ -18,6 +18,7 @@ app.onStatus = (text) => {
 app.onHeroLoaded = (asset) => {
   app.card.set(asset.info);
   $('hud-shake').classList.toggle('hidden', !asset.shake);
+  $('hud-life').textContent = `⤢ ${asset.info.life?.label || 'Life size'}`;
 };
 app.onHeroUnloaded = () => {
   app.card.set(null);

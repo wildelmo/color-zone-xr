@@ -54,18 +54,25 @@ A crystal snow globe on a base of near-black obsidian. Rock claws curl up around
 
 - **The island:** a chunk of rock with stalactites and glittering crystals underneath, sculpted as signed distance fields like the horses. It has three snowy terraces with cobbled lanes. A river runs through a ravine and spills off the cliff, and two smaller streams fall too. The water thins into drifting mist on the way down to the snowy floor.
 - **The town:** generated procedurally on the terraces.
-  - About forty houses with timber-framed, stone or plaster fronts, jettied upper floors, chimneys and the odd shop sign.
-  - Walls with crenellations and towers with coloured cone roofs, and a gatehouse with a portcullis. The river passes under the wall where it crosses the ravine.
+  - About forty houses with timber-framed, stone or plaster fronts and jettied upper floors. They're carved, not just painted:
+    - deep window frames with open shutters, sills and flower boxes;
+    - half-timbering that stands proud of the plaster;
+    - door surrounds with steps, hoods and lamps, and wreaths and garlands;
+    - balconies, dormers, bargeboards and wrought-iron shop signs;
+    - strings of coloured lights, a lip of snow with icicles along every eave, and chimney pots that smoke.
+  - The surfaces have relief: dressed stone with frost in the joints, tiled roofs with snow resting along the rows, wood grain, and cobbled streets with snow packed between the setts.
+  - Walls with crenellations, slits and stairs up to the wall-walk, and towers with coloured cone roofs and pennants flying.
+  - A gatehouse with an arch, a half-raised portcullis, open gates, a coat of arms and long banners. The river passes under the wall where it crosses the ravine.
   - A keep with turrets and a tall tower, a great hall, a cathedral with a stained-glass rose window and a bell-tower spire, a windmill with turning sails, an arched bridge, a market well, snowy pines and street lanterns.
-  - Lantern-bearers walk the walls. Windows light up one by one as night falls.
-- **Two dragons,** Émeraude and Rubis, sculpted with horns, cheek spikes, fangs, jewelled slit-pupil eyes, a ridge of gold spines, a ridged belly and a spade tail. Scales are carved into the surface in the shader, and the wings flap in two hinged panels. Each runs its own behaviour loop: wander between the towers banking into turns, pick a free perch (the keep's lookout, a wall tower, the steeple, a base crystal), glide in and flare to land, rest with wings folded, look around, stretch, puff smoke or a little flame, then leap and take off. Shaking the globe startles them into the air.
+  - Lantern-bearers walk the walls and townsfolk stroll the streets, never through a building. There's a market at the gate with snowmen about. Windows light up one by one as night falls.
+- **Two dragons,** Émeraude and Rubis, sculpted with horns, cheek spikes, fangs, jewelled slit-pupil eyes, a ridge of gold spines, a ridged belly and a spade tail. Scales are carved into the surface in the shader, and the wings flap in two hinged panels. Each runs its own behaviour loop: wander between the towers banking into turns, pick a free perch (the keep's lookout, the point of a wall tower's cone, the tip of the cathedral spire), circle in above it, drop down onto it and flare to land, rest with wings folded, look around, stretch, puff smoke or a little flame, then leap straight up and fly off. They steer around the town using a height map of every roof, tower and spire, and stay inside the glass. Shaking the globe startles them into the air.
 - **Shake it** in VR by grabbing and actually shaking it, or press *Shake*. Thousands of flakes kick up into a swirling vortex, drift down, and settle on the roofs and lanes, which slowly turn white.
 - **Turn the key crystal** on the front of the base for an original lullaby, *Berceuse du Givre*. The night deepens, the crystals glow brighter and an aurora ripples across the inside of the dome under twinkling stars.
-- **Life size** puts you on the bridge in the middle of the town, with snow falling around you, dragons overhead and the glass curving away as your sky.
+- **Up close** lifts just what's inside the globe out of the glass and blows it up to about 5 m across. It floats in a snowy night with its streets at waist height, the waterfalls falling away into mist. You stand on a walkway around it and can lean in over the rooftops while the dragons swoop overhead.
 
 <p align="center">
   <img src="docs/screenshots/15-vr-globe.png" width="32%" alt="The globe on the table in VR" />
-  <img src="docs/screenshots/17-vr-inside-globe.png" width="32%" alt="Standing on the bridge inside the globe at life size" />
+  <img src="docs/screenshots/20-quest3-up-close.png" width="32%" alt="Up close: the island and town blown up to 5 m, seen from the walkway" />
   <img src="docs/screenshots/13-vr-shelf.png" width="32%" alt="The shelf of curios" />
 </p>
 
@@ -93,7 +100,7 @@ The headset needs HTTPS for WebXR. The dev server makes a self-signed certificat
 | Scale and turn | **both grips**, pull apart or together | scroll to zoom right into the gears |
 | Put it back | tap **B/Y** or the *Reset* button | **R** |
 | Exit | hold **B/Y**, or the *Exit* button | the *Exit* button |
-| Life size | the *Life size* button | the button or **L** |
+| Life size / Up close | the *Life size* (carousel) or *Up close* (globe) button | the button or **L** |
 | Move | left stick walks, right stick snap-turns | drag to orbit |
 
 URL options: `?instant` skips the assembly show, `?asset=carousel` or `?asset=globe` picks what loads first, `?empty` starts with an empty table.
@@ -155,7 +162,7 @@ library/
 ### Adding a curio
 
 1. Make `library/<name>/index.js` exporting `info` (`name`, `maker`, `blurb`, `scale`, `bounds`) and `async create<Name>(ctx, { lod })`. It returns `{ root, update(dt, view), interactions, events, assemble?, skipAssembly?, wind?, dispose }`. See the contract in `library/core/asset.js`.
-2. Build in life-size metres. The viewer applies `info.scale` for the toy view and uses scale 1 for *Life size*.
+2. Build in life-size metres. The viewer applies `info.scale` for the toy view. `info.life` sets the big view: its button label, its scale (1 for true life size), the floor height and where you stand.
 3. Call `await ctx.step()` between expensive pieces, and `ctx.progress(f, label)` to report.
 4. Add an entry to `library/index.js`. The shelf, loader, grab, scale, audio and spotlight all work automatically.
 
@@ -166,6 +173,7 @@ The `dev/` pages are a small lab for sculpting. `dev/horse.html?yaw=0` and `dev/
 ```bash
 npm run lint
 npm test           # headless Chromium: desktop run, then an emulated Quest with two Touch controllers
+node tools/test/run.mjs --only=iwer   # one section: desktop, quest, globe-desktop, globe, exit or iwer
 ```
 
 The test boots the gallery and plays through the real interactions:
@@ -177,9 +185,34 @@ The test boots the gallery and plays through the real interactions:
 - putting it away (checking GPU memory is freed) and bringing it back from the shelf
 - entering VR off-centre and landing at the table
 - the Exit button and hold-B exit
-- for the snow globe: its town and perches, the dragons flying inside the glass, shaking it into a blizzard, and standing inside it at life size
+- for the snow globe: its town and perches, the dragons flying inside the glass, shaking it into a blizzard, Up close, and five simulated minutes of dragon flight that must never enter a building or leave the glass
+- the whole visit again on **Meta's own WebXR emulator** ([IWER](https://github.com/meta-quest/immersive-web-emulation-runtime), the emulator behind Meta's Immersive Web SDK) as a Quest 3 with Touch Plus controllers, driven only through the controls: pointing at a pedestal and pulling the trigger, the Up close button, walking round the walkway with the stick, tapping B, squeezing the grip to pick the globe up and shaking it, and the Exit button
 
 It also writes the screenshots in `docs/screenshots`.
+
+### Driving an emulated Quest by hand
+
+`tools/xr/quest.mjs` runs the gallery on IWER as a Quest 3 and takes one command at a time, so you (or a coding agent) can step inside, look around, point, click and screenshot what the headset sees:
+
+```bash
+node tools/xr/quest.mjs serve --query "?instant&asset=globe" --out shots &
+curl -s localhost:9555 -d '{"cmd":"enter"}'
+curl -s localhost:9555 -d '{"cmd":"aim","hand":"right","at":"button:life"}'
+curl -s localhost:9555 -d '{"cmd":"press","hand":"right","button":"trigger"}'
+curl -s localhost:9555 -d '{"cmd":"stick","hand":"left","y":-1,"ms":1200}'
+curl -s localhost:9555 -d '{"cmd":"head","look":[0,1.75,0]}'
+curl -s localhost:9555 -d '{"cmd":"shot","file":"town.png"}'
+```
+
+Targets are world positions in metres or names of things in the scene (`pedestal:globe`, `button:shake`, `proxy:hero`). The full command list is at the top of the file. `node tools/xr/quest.mjs run steps.json` plays a saved list of commands.
+
+`node tools/xr/tour.mjs --out shots` runs a fixed inspection tour of the snow globe's Up close view. It visits about twenty viewpoints:
+- round the walkway and leaning over the rail;
+- in front of particular houses, a door, the eaves, a balcony, a shop sign and string lights;
+- the gate, the keep and the cathedral;
+- a snowman, townsfolk, both dragons (held still), a waterfall and under the island.
+
+It also prints the triangle and draw-call counts and the town's build time, so a change can be checked before and after.
 
 ## What's next
 

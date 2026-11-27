@@ -82,6 +82,13 @@ export class Button3D {
     this.tex.needsUpdate = true;
   }
 
+  setLabel(label) {
+    if (label !== this.label) {
+      this.label = label;
+      this.draw();
+    }
+  }
+
   setHover(h) {
     if (h !== this.hover) {
       this.hover = h;

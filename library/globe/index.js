@@ -5,8 +5,11 @@ import { disposeDeep } from '../core/geometry.js';
 import { meshLayer, modelDetails } from '../core/sdfClient.js';
 import { Emitter, Timeline, ease } from '../core/asset.js';
 import { G } from './dimensions.js';
-import { T, topHeight } from './terrain.js';
+import { T } from './terrain.js';
 import { buildTown, townUniforms, townMaterial } from './town.js';
+import { buildSmoke } from './smoke.js';
+import { groundMaterial } from './ground.js';
+import { buildTownfolk } from './townfolk.js';
 import { buildDragons } from './dragons.js';
 import { buildGlass } from './glass.js';
 import { buildWater } from './water.js';
@@ -15,8 +18,8 @@ import { buildSnow } from './snow.js';
 import { SCORE } from './score.js';
 
 const ROCK = new URL('./islandModel.js', import.meta.url).href;
-// the open market square just inside the gate, between the gatehouse and the well
-const plaza = { x: Math.cos(T.gateA) * 22.7, z: Math.sin(T.gateA) * 22.7 };
+
+const GATE_A = T.gateA;
 
 export const info = {
   id: 'globe',
@@ -26,13 +29,19 @@ export const info = {
     'A floating island kingdom inside a crystal globe: a walled castle town of some forty houses, a keep and a cathedral, waterfalls spilling into mist, and two small dragons who fly, perch and puff smoke. Shake it to make it snow. Wind the key crystal for the lullaby and the aurora.',
   scale: 1 / 240, // about 43 cm across on the table
   bounds: { center: [0, 62, 0], radius: 64 },
+  // "up close": just what's inside the globe (the island, the town and the
+  // dragons, no glass or base) blown up to about 5 m across, floating in a
+  // snowy night with its streets at waist height. You stand on a walkway
+  // round it, by the main gate, and can lean right in over the rooftops.
   life: {
-    // stand in the market square inside the gate, looking up at the keep
-    floor: G.islandY + topHeight(plaza.x, plaza.z),
-    viewer: [plaza.x, plaza.z],
-    yaw: Math.atan2(-(T.hill[0] - plaza.x), -(T.hill[1] - plaza.z)),
-    focus: [T.hill[0], G.islandY + 22, T.hill[1]], // the keep
+    label: 'Up close',
+    scale: 1 / 12,
+    floor: G.islandY - 0.95 * 12, // the lowest terrace at waist height
+    viewer: [Math.cos(GATE_A) * 4, Math.sin(GATE_A) * 4],
+    yaw: Math.atan2(Math.cos(GATE_A), Math.sin(GATE_A)),
+    focus: [0, G.islandY + 3, 0],
     hideHall: true,
+    walkway: [3.1, 5.4], // metres from the centre
   },
 };
 
@@ -56,7 +65,7 @@ export async function createGlobe(ctx, { lod = 'hero' } = {}) {
     modelDetails(ROCK),
   ]);
   await ctx.step();
-  const rockMat = townMaterial(kit, { vertexColors: true, roughness: 0.85 }, U, { build: false, snow: true });
+  const rockMat = groundMaterial(kit, U);
   const floorMat = kit.standard({ vertexColors: true, roughness: 0.9 });
   const baseMat = kit.standard({ vertexColors: true, roughness: 0.32, metalness: 0.25, envMapIntensity: 1.8 });
   const base = new THREE.Mesh(baseGeo, baseMat);
@@ -82,23 +91,35 @@ export async function createGlobe(ctx, { lod = 'hero' } = {}) {
 
   // ---------------------------------------------------------------- town
   progress(0.4, 'raising the town');
-  const town = buildTown(kit, U, { lod });
+  const town = await buildTown(kit, U, { lod, step: () => ctx.step() });
   island.add(town.group);
   await ctx.step();
   const water = buildWater(kit, { lod });
   island.add(water.group);
+  if (water.foam) island.add(water.foam.mesh);
   root.add(water.mist.mesh);
   // lanterns: warm glows (island space)
   const lights = new BulbString({ radius: 0.12, glow: 1.4, detail: hero ? 1 : 0 });
   town.lanterns.forEach((p, i) => lights.add(p, 0, i, town.lanterns.length, '#ffc070'));
   island.add(lights.build(kit));
+  // little string lights along some eaves
+  const fairy = town.fairy.length ? new BulbString({ radius: 0.045, glow: 0.42, detail: 0 }) : null;
+  if (fairy) {
+    town.fairy.forEach((b, i) => fairy.add(b.p, 0, i, town.fairy.length, b.color));
+    island.add(fairy.build(kit));
+  }
+  const smoke = hero ? buildSmoke(kit, town.chimneys) : null;
+  if (smoke) island.add(smoke.mesh);
+  const folk = hero ? buildTownfolk(kit, U, townMaterial, { count: 26, blockers: town.blockers }) : null;
+  if (folk) island.add(folk.mesh);
   await ctx.step();
 
   // ------------------------------------------------------------- dragons
   progress(0.6, 'waking the dragons');
   const perches = town.perches.map((p) => ({ ...p, p: p.p.clone().add(new THREE.Vector3(0, G.islandY, 0)) }));
-  if (anchors.key) perches.push({ p: new THREE.Vector3(...anchors.key.p).add(new THREE.Vector3(0, 7.5, 0)), yaw: 0, kind: 'crystal' });
-  const dragons = await buildDragons(ctx, kit, { lod, perches });
+  // the town's height map (island-local) lifted into asset space, for flight avoidance
+  const heightAt = (x, z, dilated = true) => G.islandY + town.heightAt(x, z, dilated);
+  const dragons = await buildDragons(ctx, kit, { lod, perches, heightAt });
   root.add(dragons.group);
   await ctx.step();
 
@@ -129,6 +150,9 @@ export async function createGlobe(ctx, { lod = 'hero' } = {}) {
   let noteIdx = 0;
   let lastTinkle = 0;
   dragons.events.onPuff = (d, flame) => events.emit('sfx', { name: flame ? 'roar' : 'puff', pitch: d.i ? 1.15 : 0.95 });
+
+  // inspection hooks (tests and the Quest tour)
+  const debug = { dragons: dragons.dragons, perches, snow, simulateDragons: dragons.simulate, heightAt, houses: town.houseList, snowmen: town.snowmen, island, uniforms: U, folk, freezeDragons: false };
 
   // ------------------------------------------------------- assembly script
   const timeline = new Timeline();
@@ -268,13 +292,22 @@ export async function createGlobe(ctx, { lod = 'hero' } = {}) {
     const settled = Math.min(1, snow.onIsland / 220);
     U.uSnow.value += (0.3 + settled * 0.6 - U.uSnow.value) * Math.min(1, dt * 0.3);
 
-    dragons.update(dt, state.time, { startle: state.agitation });
+    if (!debug.freezeDragons) dragons.update(dt, state.time, { startle: state.agitation });
     snow.update(dt, state.time, state.agitation);
     town.update(state.time, dt, state.speed);
+    // the townsfolk come out and the fires are lit once the town has risen
+    const risen = U.uBuild.value > 0.92;
+    if (smoke) smoke.mesh.visible = risen;
+    if (folk) folk.mesh.visible = risen;
+    if (risen) {
+      smoke?.update(state.time, { night: state.night, agitation: state.agitation });
+      folk?.update(state.time);
+    }
     water.update(state.time, dt);
     crystals.update(state.time);
     glass.update(state.time, state.night);
     lights.update(state.time, 0.02);
+    fairy?.update(state.time, 0.04);
   }
 
   update(0);
@@ -288,11 +321,7 @@ export async function createGlobe(ctx, { lod = 'hero' } = {}) {
     interactions,
     timeline,
     stats: { houses: town.houses },
-    debug: { dragons: dragons.dragons, perches, snow },
-    // stand on the bridge over the river at life size (computed with the town)
-    life: town.viewpoint
-      ? { ...info.life, floor: G.islandY + town.viewpoint.y, viewer: [town.viewpoint.x, town.viewpoint.z], yaw: town.viewpoint.yaw }
-      : info.life,
+    debug,
     update,
     assemble() {
       timeline.play();
@@ -306,6 +335,11 @@ export async function createGlobe(ctx, { lod = 'hero' } = {}) {
     /** give it a shake (from a button; in VR just shake it) */
     shake(amount = 0.8) {
       state.agitation = Math.min(1, state.agitation + amount);
+    },
+    /** 'life' shows just what's inside (no glass, base or crystals); 'toy' the whole globe */
+    setView(mode) {
+      const inside = mode === 'life';
+      for (const o of [base, floor, crystals.group, glass.glass, glass.collar, keyProxy]) if (o) o.visible = !inside;
     },
     dispose() {
       disposeDeep(root);

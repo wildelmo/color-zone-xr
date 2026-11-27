@@ -175,8 +175,8 @@ export class App {
     this.pendingRecenter = { target: new THREE.Vector3(0, 0, 0), yaw: 0, frames: 3 };
     const space = this.renderer.xr.getReferenceSpace();
     space?.addEventListener?.('reset', () => {
-      const life = this.stage.mode === 'life';
-      this.pendingRecenter = { target: new THREE.Vector3(0, 0, life ? 7.4 : 0), yaw: 0, frames: 2 };
+      const v = this.stage.mode === 'life' ? this.stage.lifeView.viewer : [0, 0];
+      this.pendingRecenter = { target: new THREE.Vector3(v[0], 0, v[1]), yaw: this.stage.mode === 'life' ? this.stage.lifeView.yaw || 0 : 0, frames: 2 };
     });
     if (this.stage.pendingShow) this.stage.startShow();
     this.onModeChange?.('xr');
@@ -326,9 +326,11 @@ export class App {
       this.panel.group.rotation.set(-0.75, 0, 0);
       this.card.mesh.visible = true;
     }
-    this.panel.group.visible = xr;
+    this.panel.group.visible = xr && !this.hidePanel; // (hidePanel: a test hook for clean pictures)
     this.panel.setVisible('shake', !!this.stage.asset?.shake);
-    this.panel.buttons.find((b) => b.id === 'life').setActive(this.stage.mode === 'life');
+    const lifeBtn = this.panel.buttons.find((b) => b.id === 'life');
+    lifeBtn.setActive(this.stage.mode === 'life');
+    lifeBtn.setLabel(this.stage.lifeLabel);
     this.panel.update(dt);
 
     this.stage.update(dt, this.camera);

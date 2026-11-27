@@ -106,10 +106,18 @@ export function buildWater(kit, { lod }) {
   falls.forEach((f, k) => {
     for (let i = 0; i < perFall; i++) motes.push({ f: k, t: Math.random(), seed: Math.random() * 100 });
   });
+  // foam churning white where each fall pours over its lip, and spray flung off it (island space)
+  const perFoam = hero ? 36 : 0;
+  const foam = perFoam ? new GlowPoints(kit, perFoam * falls.length, { additive: false, soft: 0.8, core: 0.4, opacity: 0.9, name: 'foam', renderOrder: 9 }) : null;
+  const flecks = [];
+  falls.forEach((f, k) => {
+    for (let i = 0; i < perFoam; i++) flecks.push({ f: k, t: Math.random(), u: Math.random() - 0.5, seed: Math.random() * 100, spray: i % 3 === 0 });
+  });
   return {
     group,
     falls,
     mist,
+    foam,
     update(t, dt) {
       U.uTime.value = t;
       motes.forEach((m, i) => {
@@ -125,6 +133,25 @@ export function buildWater(kit, { lod }) {
         mist.set(i, x, y, z, 0.86, 0.92, 1.0, (2.5 + m.t * 7) * (f.width > 1.5 ? 1 : 0.6), a);
       });
       mist.commit(motes.length);
+      if (foam) {
+        flecks.forEach((p, i) => {
+          const f = falls[p.f];
+          p.t += dt * (p.spray ? 0.9 : 1.6);
+          if (p.t > 1) p.t -= 1;
+          const side = new THREE.Vector3(-f.out.z, 0, f.out.x);
+          const w = f.width * (0.9 + p.t * 0.4);
+          // foam boils at the lip; spray arcs out and falls with the water
+          const outD = p.spray ? 0.4 + p.t * 2.2 : 0.1 + p.t * 0.7;
+          const down = p.spray ? p.t * p.t * 3.5 - p.t * 0.6 : p.t * 0.9;
+          const x = f.lip.x + f.out.x * outD + side.x * p.u * w + Math.sin(p.seed + t * 3) * 0.08;
+          const z = f.lip.z + f.out.z * outD + side.z * p.u * w + Math.cos(p.seed + t * 2.6) * 0.08;
+          const y = f.lip.y - down + 0.12;
+          const a = Math.sin(Math.PI * p.t) * (p.spray ? 0.55 : 0.85);
+          const sz = (p.spray ? 0.12 : 0.28 + p.t * 0.25) * (f.width > 1.5 ? 1 : 0.7);
+          foam.set(i, x, y, z, 0.92, 0.96, 1.0, sz, a);
+        });
+        foam.commit(flecks.length);
+      }
     },
   };
 }
