@@ -8,7 +8,7 @@ import { D, HORSE_CELLS } from './dimensions.js';
 const MODEL = new URL('./horseModel.js', import.meta.url).href;
 
 // coat, blanket, mane (g = gilded), saddle: one entry per horse, outer row first
-const LIVERY = [
+export const LIVERY = [
   ['#f3ece0', '#a8262b', 'g', '#5a1314'],
   ['#2a2422', '#2c4a8f', 'g', '#7a1c1c'],
   ['#d9b27a', '#2d5838', '#f3e9d6', '#5a1314'],
