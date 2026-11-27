@@ -220,7 +220,28 @@ export class Quest {
     }, n);
   }
 
+  /**
+   * Run one command. On CI the page's script context has been seen to be
+   * replaced (no navigation, no crash) while a command waited on IWER's frame
+   * queue; if the app is still there, say so, re-attach and try once more,
+   * and if it isn't, fail as before.
+   */
   async run(c) {
+    try {
+      return await this.run1(c);
+    } catch (e) {
+      if (!/Execution context was destroyed/.test(String(e.message))) throw e;
+      const info = await this.page
+        .evaluate(() => ({ url: location.href, app: !!window.__cc, presenting: !!window.__cc?.renderer.xr.isPresenting, helpers: !!window.__qd, quest: !!window.__quest, frame: window.__cc?.frame }))
+        .catch((err) => ({ error: String(err.message || err).split('\n')[0] }));
+      console.log(`  [quest] the page's script context was replaced during "${c.cmd}": ${JSON.stringify(info)}`);
+      if (!info.app) throw e;
+      if (!info.helpers) await helpers(this.page);
+      return await this.run1(c);
+    }
+  }
+
+  async run1(c) {
     const p = this.page;
     const hand = c.hand || 'right';
     switch (c.cmd) {
