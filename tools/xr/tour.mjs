@@ -31,7 +31,7 @@ await run({ cmd: 'aim', hand: 'right', at: 'button:life' });
 await run({ cmd: 'press', hand: 'right', button: 'trigger' });
 await p.waitForFunction(() => !window.__cc.stage.tween && window.__cc.stage.mode === 'life', null, { timeout: 90000 });
 // the control panel follows you about; keep it out of the pictures
-await p.evaluate(() => (window.__cc.panel.group.visible = false));
+await p.evaluate(() => (window.__cc.hidePanel = true));
 // hands down out of the way
 await run({ cmd: 'aim', hand: 'right', at: [0, -5, 9] });
 await run({ cmd: 'aim', hand: 'left', at: [0, -5, 9] });
@@ -130,12 +130,8 @@ const views = await p.evaluate(async () => {
     const ol = Math.hypot(fp.x, fp.z);
     v.push({ name: `folk-${i}`, at: w(fp.x + (fp.x / ol) * 2.2, fp.y + 2.4, fp.z + (fp.z / ol) * 2.2), look: w(fp.x, fp.y + 0.8, fp.z) });
   }
-  // both dragons, close, wherever they are now
-  a.debug.dragons.forEach((d, i) => {
-    const p = a.root.localToWorld(d.pos.clone());
-    const ol = Math.hypot(p.x, p.z) || 1;
-    v.push({ name: `dragon-${i}`, at: [p.x + (p.x / ol) * 0.45, p.y + 0.12, p.z + (p.z / ol) * 0.45], look: p.toArray() });
-  });
+  // both dragons, close (held still for the picture; placed at shot time)
+  a.debug.dragons.forEach((d, i) => v.push({ name: `dragon-${i}`, dragon: i }));
   // down the lower ring street
   const hill = T.hill;
   const sa = gate - 0.6;
@@ -148,6 +144,20 @@ const views = await p.evaluate(async () => {
 
 for (const vw of views) {
   if (only && !only.includes(vw.name)) continue;
+  if (vw.dragon !== undefined) {
+    Object.assign(
+      vw,
+      await p.evaluate((i) => {
+        const a = window.__cc.stage.asset;
+        a.debug.freezeDragons = true;
+        const d = a.debug.dragons[i];
+        const q = a.root.localToWorld(d.pos.clone());
+        // beside it, a little above, looking at its head side
+        const f = new window.__qd.THREE.Vector3(Math.sin(d.yaw), 0, Math.cos(d.yaw));
+        return { at: [q.x + f.x * 0.42 + f.z * 0.2, q.y + 0.1, q.z + f.z * 0.42 - f.x * 0.2], look: q.toArray() };
+      }, vw.dragon),
+    );
+  }
   await run({ cmd: 'head', at: vw.at, look: vw.look });
   // tuck the controllers behind the camera so they never block the view
   const d = [vw.look[0] - vw.at[0], vw.look[1] - vw.at[1], vw.look[2] - vw.at[2]];
@@ -157,6 +167,7 @@ for (const vw of views) {
   await run({ cmd: 'place', hand: 'left', at: behind(-1), look: [vw.at[0] - d[0], vw.at[1] - 1, vw.at[2] - d[2]] });
   await run({ cmd: 'wait', frames: 3 });
   await run({ cmd: 'shot', file: `${vw.name}.png` });
+  if (vw.dragon !== undefined) await p.evaluate(() => (window.__cc.stage.asset.debug.freezeDragons = false));
   console.log('shot', vw.name, vw.style ?? '');
 }
 

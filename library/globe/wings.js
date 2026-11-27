@@ -32,12 +32,15 @@ function scallop(a, b, bow, depth, n) {
 }
 
 /** triangulate a fan of strips from `hub` points to an edge polyline (both same length) */
-function stripMesh(edgeA, edgeB) {
+function stripMesh(edgeA, edgeB, vA = 0, vB = 1) {
   const pos = [];
+  const uv = [];
   const idx = [];
   const n = edgeA.length;
   for (let i = 0; i < n; i++) {
     pos.push(edgeA[i].x, edgeA[i].y, edgeA[i].z, edgeB[i].x, edgeB[i].y, edgeB[i].z);
+    // u: across the panel (0..1 along its free edge), v: out from the root (0..1)
+    uv.push(i / (n - 1), vA, i / (n - 1), vB);
   }
   for (let i = 0; i < n - 1; i++) {
     const a = i * 2, b = a + 1, c = a + 2, d = a + 3;
@@ -45,6 +48,7 @@ function stripMesh(edgeA, edgeB) {
   }
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
   g.setIndex(idx);
   g.computeVertexNormals();
   return g;
@@ -62,7 +66,7 @@ function membrane(root, tipA, tipB, seg, depth) {
     const t0 = r / rows, t1 = (r + 1) / rows;
     const a = edge.map((p, i) => rootSide[i].clone().lerp(p, t0).add(new THREE.Vector3(0, -0.035 * Math.sin(Math.PI * t0) * Math.sin((Math.PI * i) / seg), 0)));
     const b = edge.map((p, i) => rootSide[i].clone().lerp(p, t1).add(new THREE.Vector3(0, -0.035 * Math.sin(Math.PI * t1) * Math.sin((Math.PI * i) / seg), 0)));
-    geos.push(stripMesh(a, b));
+    geos.push(stripMesh(a, b, t0, t1));
     strips.push(a);
   }
   const g = mergeGeometries(geos.map((x) => normalizeGeometry(x)), false);

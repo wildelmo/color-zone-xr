@@ -326,7 +326,7 @@ export class App {
       this.panel.group.rotation.set(-0.75, 0, 0);
       this.card.mesh.visible = true;
     }
-    this.panel.group.visible = xr;
+    this.panel.group.visible = xr && !this.hidePanel; // (hidePanel: a test hook for clean pictures)
     this.panel.setVisible('shake', !!this.stage.asset?.shake);
     const lifeBtn = this.panel.buttons.find((b) => b.id === 'life');
     lifeBtn.setActive(this.stage.mode === 'life');

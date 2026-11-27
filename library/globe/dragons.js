@@ -54,7 +54,7 @@ export async function buildDragons(ctx, kit, { lod, perches, heightAt = () => -1
     horns: kit.standard({ color: 0xffffff, roughness: 0.35, metalness: 0.1 }),
     spikes: kit.standard({ color: 0xffffff, roughness: 0.28, metalness: 0.75 }),
     eyes: kit.standard({ color: 0xffffff, roughness: 0.05, metalness: 0.2, vertexColors: true, emissive: 0x2a1600 }),
-    membrane: kit.standard({ color: 0xffffff, roughness: 0.6, side: THREE.DoubleSide }),
+    membrane: wingSkin(kit.standard({ color: 0xffffff, roughness: 0.6, side: THREE.DoubleSide })),
     bones: kit.standard({ color: 0xffffff, roughness: 0.3, metalness: 0.7 }),
   };
   const group = new THREE.Group();
@@ -415,4 +415,28 @@ export async function buildDragons(ctx, kit, { lod, perches, heightAt = () => -1
 
   update(0, 0);
   return { group, dragons, update, events, simulate, liveries: LIVERY };
+}
+
+/**
+ * Wing skin: radial veins running out from the bones, a darker trailing
+ * edge and a lighter middle where the membrane is thinnest (uv: across the
+ * panel, out from its root).
+ */
+function wingSkin(m) {
+  m.defines = { ...(m.defines || {}), USE_UV: '' };
+  m.onBeforeCompile = (shader) => {
+    shader.fragmentShader = shader.fragmentShader.replace(
+      '#include <color_fragment>',
+      `#include <color_fragment>
+      {
+        float across = fract(vUv.x * 4.0);
+        float vein = (1.0 - smoothstep(0.0, 0.06, abs(across - 0.5))) * smoothstep(0.05, 0.35, vUv.y) * (1.0 - smoothstep(0.85, 1.0, vUv.y));
+        float edge = smoothstep(0.82, 1.0, vUv.y);
+        float thin = sin(clamp(vUv.y, 0.0, 1.0) * 3.14159) * (0.6 + 0.4 * sin(across * 3.14159));
+        diffuseColor.rgb *= mix(1.0, 0.5, vein) * mix(1.0, 0.65, edge) * (0.82 + 0.3 * thin);
+      }`,
+    );
+  };
+  m.customProgramCacheKey = () => 'dragon:wing-skin';
+  return m;
 }

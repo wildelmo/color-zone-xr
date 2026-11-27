@@ -151,6 +151,9 @@ export async function createGlobe(ctx, { lod = 'hero' } = {}) {
   let lastTinkle = 0;
   dragons.events.onPuff = (d, flame) => events.emit('sfx', { name: flame ? 'roar' : 'puff', pitch: d.i ? 1.15 : 0.95 });
 
+  // inspection hooks (tests and the Quest tour)
+  const debug = { dragons: dragons.dragons, perches, snow, simulateDragons: dragons.simulate, heightAt, houses: town.houseList, snowmen: town.snowmen, island, uniforms: U, folk, freezeDragons: false };
+
   // ------------------------------------------------------- assembly script
   const timeline = new Timeline();
   if (hero) {
@@ -289,7 +292,7 @@ export async function createGlobe(ctx, { lod = 'hero' } = {}) {
     const settled = Math.min(1, snow.onIsland / 220);
     U.uSnow.value += (0.3 + settled * 0.6 - U.uSnow.value) * Math.min(1, dt * 0.3);
 
-    dragons.update(dt, state.time, { startle: state.agitation });
+    if (!debug.freezeDragons) dragons.update(dt, state.time, { startle: state.agitation });
     snow.update(dt, state.time, state.agitation);
     town.update(state.time, dt, state.speed);
     // the townsfolk come out and the fires are lit once the town has risen
@@ -318,7 +321,7 @@ export async function createGlobe(ctx, { lod = 'hero' } = {}) {
     interactions,
     timeline,
     stats: { houses: town.houses },
-    debug: { dragons: dragons.dragons, perches, snow, simulateDragons: dragons.simulate, heightAt, houses: town.houseList, snowmen: town.snowmen, island, uniforms: U, folk },
+    debug,
     update,
     assemble() {
       timeline.play();
