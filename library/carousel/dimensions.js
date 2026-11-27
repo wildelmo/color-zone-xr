@@ -53,3 +53,10 @@ export const D = {
 D.ratio = D.pinionX / D.pinionR;
 /** pole top sits this far below the shaft when the crank is level */
 D.poleTopToHorse = D.shaftY - D.rod - D.horseMid;
+
+/**
+ * grid spacing (horse units) the horses are meshed at: the hero carousel's
+ * near and far levels of detail, and the shelf miniature. The test suite
+ * checks the mane at these same resolutions.
+ */
+export const HORSE_CELLS = { hi: 0.034, lo: 0.062, shelf: 0.08 };

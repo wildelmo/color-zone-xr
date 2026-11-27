@@ -3,7 +3,7 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { meshLayer, modelDetails } from '../core/sdfClient.js';
 import { normalizeGeometry, tube, twistedPole, lathe } from '../core/geometry.js';
 import { paintMaskMaterial } from '../core/materials.js';
-import { D } from './dimensions.js';
+import { D, HORSE_CELLS } from './dimensions.js';
 
 const MODEL = new URL('./horseModel.js', import.meta.url).href;
 
@@ -32,7 +32,7 @@ const LIVERY = [
  */
 export async function buildHorses(ctx, kit, { lod }) {
   const hero = lod === 'hero';
-  const cells = hero ? { hi: 0.034, lo: 0.062 } : { hi: null, lo: 0.08 };
+  const cells = hero ? { hi: HORSE_CELLS.hi, lo: HORSE_CELLS.lo } : { hi: null, lo: HORSE_CELLS.shelf };
   const levels = hero ? ['hi', 'lo'] : ['lo'];
 
   const det = await modelDetails(MODEL);

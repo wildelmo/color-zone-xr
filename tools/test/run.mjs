@@ -125,6 +125,15 @@ console.log("\n▶ The horses' manes");
     }
   }
   check(buried === 0 && bare === 0, `the mane covers the crest from withers to poll (${n} points across the top of the neck: ${bare} bare, ${buried} places where the hair sinks into the neck)`);
+  // and as the carousel actually draws it: meshed at each level of detail,
+  // seen from straight above, it's hair all the way across the crest
+  const { maneCoverage } = await import('./maneCoverage.js');
+  const { HORSE_CELLS } = await import('../../library/carousel/dimensions.js');
+  for (const [level, cell] of Object.entries(HORSE_CELLS)) {
+    const r = maneCoverage(layers, cell);
+    check(r.bare === 0, `meshed at the ${level} level (cell ${cell}), the neck shows through the mane at ${r.bare} of ${r.n} points down the crest`);
+    if (r.bare) console.log(r.map.map((row) => '      ' + row).join('\n'));
+  }
 }
 
 console.log('\n▶ Desktop: boot, assemble, wind, play');
