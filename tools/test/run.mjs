@@ -152,7 +152,8 @@ if (want('desktop')) {
   }
   // life size from the HUD
   await page.click('#hud-life');
-  await page.waitForFunction(() => !window.__cc.stage.tween && window.__cc.stage.mode === 'life', null, { timeout: 60000 }).catch(() => {});
+  // (life size fills the screen: on a software-GL runner each frame can take seconds)
+  await page.waitForFunction(() => !window.__cc.stage.tween && window.__cc.stage.mode === 'life', null, { timeout: 240000 }).catch(() => {});
   s = await state(page);
   check(s.stageMode === 'life' && Math.abs(s.scale - 1) < 0.01, `life size (scale ${s.scale.toFixed(2)})`);
   if (!QUICK) {
@@ -161,7 +162,7 @@ if (want('desktop')) {
     await snap(page, '08-life-size.png');
   }
   await page.click('#hud-life');
-  await page.waitForFunction(() => !window.__cc.stage.tween && window.__cc.stage.mode === 'toy', null, { timeout: 60000 }).catch(() => {});
+  await page.waitForFunction(() => !window.__cc.stage.tween && window.__cc.stage.mode === 'toy', null, { timeout: 240000 }).catch(() => {});
   s = await state(page);
   check(s.stageMode === 'toy' && Math.abs(s.scale - 1 / 22) < 0.002, 'back to toy size on the table');
   await page.close();
