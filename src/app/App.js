@@ -10,6 +10,7 @@ import { Hall, LAYOUT } from './Hall.js';
 import { Shelf } from './Shelf.js';
 import { Stage } from './Stage.js';
 import { Frames } from './Frames.js';
+import { Quality } from './Quality.js';
 
 /**
  * The Curio Cabinet viewer: a WebXR gallery where one asset at a time is
@@ -38,6 +39,7 @@ export class App {
     renderer.xr.setReferenceSpaceType('local-floor');
     renderer.xr.setFoveation(0.6);
     this.renderer = renderer;
+    this.quality = new Quality(this); // VR frame rate, foveation fall-back, ?hz ?fov ?scale
 
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0x0e0907);
@@ -286,6 +288,7 @@ export class App {
     const now = performance.now();
     const dt = Math.min((now - this._last) / 1000, 0.1);
     this._last = now;
+    this.quality.frame(now); // (every frame interval, paused or not)
     if (this.paused) return;
     this.frame++;
     const xr = this.renderer.xr.isPresenting;
