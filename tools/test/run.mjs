@@ -17,6 +17,9 @@ import { openQuest } from '../xr/quest.mjs';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const OUT = path.join(ROOT, 'docs', 'screenshots');
 const QUICK = process.argv.includes('--quick');
+// --only=desktop|quest|globe-desktop|globe|exit|iwer runs just that section
+const ONLY = (process.argv.find((a) => a.startsWith('--only=')) || '').slice(7);
+const want = (name) => !ONLY || ONLY === name;
 fs.mkdirSync(OUT, { recursive: true });
 
 const failures = [];
@@ -98,7 +101,7 @@ const look = (page, target, pos) =>
 
 // ------------------------------------------------------------------ desktop
 console.log('\n▶ Desktop: boot, assemble, wind, play');
-{
+if (want('desktop')) {
   const page = await newPage({ width: 1280, height: 800 });
   await page.waitForTimeout(800);
   await page.waitForFunction(() => window.__cc.stage.asset, null, { timeout: 120000 });
@@ -166,7 +169,7 @@ console.log('\n▶ Desktop: boot, assemble, wind, play');
 
 // --------------------------------------------------------------------- XR
 console.log('\n▶ Emulated Quest');
-{
+if (want('quest')) {
   const page = await newPage({ width: 1600, height: 800 }, { xr: true, query: '?instant' });
   await page.waitForFunction(() => !document.getElementById('btn-vr').disabled && window.__cc.stage.asset, null, { timeout: 120000 });
   // start "standing" somewhere odd in the room, facing sideways
@@ -360,7 +363,7 @@ console.log('\n▶ Emulated Quest');
 }
 
 // --------------------------------------------------- the snow globe, desktop
-if (!QUICK) {
+if (!QUICK && want('globe-desktop')) {
   console.log('\n▶ Le Royaume de Givre (snow globe), desktop shots');
   const page = await newPage({ width: 1280, height: 800 }, { query: '?asset=globe&instant' });
   await page.waitForFunction(() => window.__cc.stage.asset, null, { timeout: 240000 });
@@ -385,7 +388,7 @@ if (!QUICK) {
 
 // --------------------------------------------------------- the snow globe
 console.log('\n▶ Le Royaume de Givre (snow globe), emulated Quest');
-{
+if (want('globe')) {
   const page = await newPage({ width: 1600, height: 800 }, { xr: true, query: '?asset=globe&instant' });
   await page.waitForFunction(() => !document.getElementById('btn-vr').disabled && window.__cc.stage.asset, null, { timeout: 240000 });
   let s = await state(page);
@@ -453,7 +456,7 @@ console.log('\n▶ Le Royaume de Givre (snow globe), emulated Quest');
 
 // ------------------------------------------------------------ hold B to exit
 console.log('\n▶ Hold B/Y to exit');
-{
+if (want('exit')) {
   const page = await newPage({ width: 800, height: 400 }, { xr: true, query: '?instant&empty' });
   await page.waitForFunction(() => !document.getElementById('btn-vr').disabled, null, { timeout: 60000 });
   await page.click('#btn-vr');
@@ -470,7 +473,7 @@ console.log('\n▶ Hold B/Y to exit');
 // Immersive Web SDK) as a Quest 3 with Touch Plus controllers, driven only
 // the way a person would: aim, pull the trigger, squeeze, push the sticks.
 console.log("\n▶ Meta Quest 3 (Meta's IWER emulator), hands on the controllers");
-{
+if (want('iwer')) {
   const q = await openQuest(browser, url, { query: '?instant&empty', size: [960, 720], errors, out: OUT });
   const run = (c) => q.run(c);
   const st = () => run({ cmd: 'state' });
@@ -510,6 +513,8 @@ console.log("\n▶ Meta Quest 3 (Meta's IWER emulator), hands on the controllers
   s = await st();
   const held = await run({ cmd: 'find', name: 'proxy:hero' });
   check(s.grabbed && Math.abs(held.center[1] - 1.35) < 0.05, `squeezing the grip picks it up and it follows your hand (${held.center.map((v) => v.toFixed(2)).join(', ')})`);
+  // lifting it briskly already stirs the snow; let it settle before the real shake
+  await q.page.waitForFunction(() => window.__cc.stage.asset.state.agitation < 0.25, null, { timeout: 120000 }).catch(() => {});
   const a0 = await q.page.evaluate(() => window.__cc.stage.asset.state.agitation);
   await run({ cmd: 'shake', hand: 'right', amplitude: 0.12, count: 16 });
   const a1 = await q.page.evaluate(() => window.__cc.stage.asset.state.agitation);

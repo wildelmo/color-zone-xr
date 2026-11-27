@@ -173,6 +173,7 @@ The `dev/` pages are a small lab for sculpting. `dev/horse.html?yaw=0` and `dev/
 ```bash
 npm run lint
 npm test           # headless Chromium: desktop run, then an emulated Quest with two Touch controllers
+node tools/test/run.mjs --only=iwer   # one section: desktop, quest, globe-desktop, globe, exit or iwer
 ```
 
 The test boots the gallery and plays through the real interactions:
