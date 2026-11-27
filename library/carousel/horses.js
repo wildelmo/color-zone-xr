@@ -2,8 +2,9 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { meshLayer, modelDetails } from '../core/sdfClient.js';
 import { normalizeGeometry, tube, twistedPole, lathe } from '../core/geometry.js';
-import { paintMaskMaterial } from '../core/materials.js';
-import { D, HORSE_CELLS } from './dimensions.js';
+import { paintMaskMaterial, PALETTE } from '../core/materials.js';
+import { D, HORSE_CELLS, HORSE_SHADOW, BLANKET_PIPING } from './dimensions.js';
+import { simplify } from './simplify.js';
 
 const MODEL = new URL('./horseModel.js', import.meta.url).href;
 
@@ -28,7 +29,13 @@ export const LIVERY = [
  * Each layer (body, mane, saddle, gold, jewels) has a high- and a low-detail
  * instanced mesh; every frame each horse is assigned to one of them by its
  * distance to the viewer, so only the horses you are looking closely at pay
- * for the full sculpt.
+ * for the full sculpt. The poles follow their horse's level: the real
+ * barley twist near, a plain cylinder with the twist shaded on far.
+ *
+ * None of those meshes casts a shadow. Two stand-ins do, drawn only into the
+ * shadow map (see shadowOnly): a simplified horse (the model's `shadow`
+ * layer) and a plain pole. A shadow map texel is about 2 cm of carousel, so
+ * straps, jewels, horseshoes and the twist never showed in a shadow anyway.
  */
 export async function buildHorses(ctx, kit, { lod }) {
   const hero = lod === 'hero';
@@ -37,6 +44,8 @@ export async function buildHorses(ctx, kit, { lod }) {
 
   const det = await modelDetails(MODEL);
   await ctx.step();
+  // the shadow stand-in meshes in the worker while the levels below are built
+  const shadowRaw = hero ? meshLayer(MODEL, 'shadow', HORSE_SHADOW.cell) : null;
 
   const geos = {};
   for (const L of levels) {
@@ -48,12 +57,16 @@ export async function buildHorses(ctx, kit, { lod }) {
       meshLayer(MODEL, 'gold', c * 0.8),
     ]);
     await ctx.step();
-    // gold: horseshoes + strap tubes + rosettes
+    // the far level paints its tack on the body (see giltTackMaterial) and
+    // carries what places it as one vec3 attribute; the near level models it
+    packTack(body, L === 'lo');
+    // gold: horseshoes + strap tubes (near level only) + rosettes
     const goldParts = [normalizeGeometry(goldSdf)];
-    for (const s of det.straps) {
-      if (L !== 'hi' && s.radius < 0.009) continue; // reins vanish at a distance anyway
-      const t = tube(s.points, s.radius, { closed: s.closed, segments: Math.ceil(s.points.length * (L === 'hi' ? 1.2 : 0.35)), radial: L === 'hi' ? 5 : 3 });
-      if (t) goldParts.push(normalizeGeometry(t));
+    if (L === 'hi') {
+      for (const s of det.straps) {
+        const t = tube(s.points, s.radius, { closed: s.closed, segments: Math.ceil(s.points.length * 1.2), radial: 5 });
+        if (t) goldParts.push(normalizeGeometry(t));
+      }
     }
     const jewelParts = [];
     const n = new THREE.Vector3();
@@ -100,6 +113,7 @@ export async function buildHorses(ctx, kit, { lod }) {
   // ---- materials
   const mats = {
     body: paintMaskMaterial(kit, { roughness: 0.3 }),
+    bodyTack: giltTackMaterial(kit, { roughness: 0.3 }),
     maneGold: kit.gold({ roughness: 0.26 }),
     manePaint: kit.standard({ color: 0xffffff, roughness: 0.42 }),
     saddle: kit.standard({ color: 0xffffff, roughness: 0.45 }),
@@ -146,9 +160,9 @@ export async function buildHorses(ctx, kit, { lod }) {
     const perLevel = {};
     for (const L of levels) {
       const g = geos[L][key];
-      const m = new THREE.InstancedMesh(g, material, N);
+      const m = new THREE.InstancedMesh(g, material.isMaterial ? material : material[L], N);
       m.count = 0;
-      m.castShadow = true;
+      m.castShadow = false; // the stand-in below casts for it
       m.receiveShadow = true;
       m.frustumCulled = false;
       m.name = `horse:${key}:${L}`;
@@ -166,32 +180,57 @@ export async function buildHorses(ctx, kit, { lod }) {
     }
     layers.push({ key, filter, color, attrs, perLevel });
   };
-  makeLayer('body', mats.body, null, null, ['instanceCoat', 'instanceTrim']);
+  makeLayer('body', { hi: mats.body, lo: mats.bodyTack }, null, null, ['instanceCoat', 'instanceTrim']);
   makeLayer('mane', mats.maneGold, (h) => h.gildedMane, null);
   makeLayer('mane', mats.manePaint, (h) => !h.gildedMane, (h) => h.mane);
   makeLayer('saddle', mats.saddle, null, (h) => h.saddle);
   makeLayer('gold', mats.gold, null, null);
   makeLayer('jewels', mats.jewels, null, null);
 
-  // poles + crank rods (one detail level: they're simple)
-  const poleGeo = buildPoleGeometry(hero);
-  const poles = new THREE.InstancedMesh(poleGeo, mats.pole, N);
-  poles.name = 'poles';
-  poles.castShadow = poles.receiveShadow = true;
-  poles.frustumCulled = false;
-  poles.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-  group.add(poles);
+  // poles: `poles` is the real barley twist, `poles:lo` a plain cylinder with
+  // the twist shaded on (barleyTwistMaterial); each pole takes its horse's level
+  const instanced = (geo, material, name) => {
+    const m = new THREE.InstancedMesh(geo, material, N);
+    m.name = name;
+    m.count = 0;
+    m.castShadow = false;
+    m.receiveShadow = true;
+    m.frustumCulled = false;
+    m.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    group.add(m);
+    return m;
+  };
+  const poleLevels = { hi: instanced(buildPoleGeometry(hero), mats.pole, 'poles') };
+  if (hero) poleLevels.lo = instanced(buildPlainPoleGeometry(), barleyTwistMaterial(kit, { roughness: 0.18 }), 'poles:lo');
   const rodGeo = new THREE.CylinderGeometry(0.028, 0.028, D.rod, hero ? 10 : 6);
   const rodEnds = [new THREE.TorusGeometry(0.05, 0.022, 6, hero ? 14 : 8), new THREE.TorusGeometry(0.05, 0.022, 6, hero ? 14 : 8)];
   rodEnds[0].rotateY(Math.PI / 2).translate(0, D.rod / 2, 0);
   rodEnds[1].rotateY(Math.PI / 2).translate(0, -D.rod / 2, 0);
   const rodAll = mergeGeometries([rodGeo, ...rodEnds].map((g) => normalizeGeometry(g)), false);
-  const rods = new THREE.InstancedMesh(rodAll, mats.rod, N);
-  rods.name = 'rods';
-  rods.castShadow = true;
-  rods.frustumCulled = false;
-  rods.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-  group.add(rods);
+  const rods = instanced(rodAll, mats.rod, 'rods');
+  rods.count = N;
+  rods.receiveShadow = false;
+  // (rods cast only while the carousel is tilted: see shelter in index.js)
+
+  // ---- shadow stand-ins: simplified horse + plain pole, drawn only into the shadow map
+  const shadows = [];
+  if (hero) {
+    const raw = await shadowRaw;
+    const { positions, index } = await simplify(raw.attributes.position.array, raw.index.array, HORSE_SHADOW.tris, { step: ctx.step });
+    raw.dispose();
+    const horseShadowGeo = new THREE.BufferGeometry();
+    horseShadowGeo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    horseShadowGeo.setIndex(new THREE.BufferAttribute(index, 1));
+    horseShadowGeo.computeVertexNormals();
+    // never drawn in colour: any instanced material without instance colours
+    // will do, so it borrows the rods' and needs no shader of its own
+    shadows.push(shadowOnly(instanced(horseShadowGeo, mats.rod, 'horse:shadow'), N));
+    const poleShadowGeo = new THREE.CylinderGeometry(0.046, 0.046, 3.75, 8, 1, true);
+    poleShadowGeo.translate(0, (2.05 + -1.7) / 2, 0);
+    shadows.push(shadowOnly(instanced(poleShadowGeo, mats.rod, 'poles:shadow'), N));
+    await ctx.step();
+  }
+  const [horseShadow, poleShadow] = shadows;
 
   const _p = new THREE.Vector3();
   const _q = new THREE.Quaternion();
@@ -243,6 +282,8 @@ export async function buildHorses(ctx, kit, { lod }) {
         if (h.level === 'hi') hi++;
       }
     } else for (const h of horses) h.level = levels[0];
+    // (for comparing the two levels from one spot: see debug.forceHorseLevel in index.js)
+    if (herd.force && levels.includes(herd.force)) for (const h of horses) h.level = herd.force;
 
     for (const layer of layers) {
       const counts = {};
@@ -267,34 +308,237 @@ export async function buildHorses(ctx, kit, { lod }) {
         for (const a of Object.values(pl.extra)) a.needsUpdate = true;
       }
     }
+    let nHi = 0, nLo = 0;
     for (let i = 0; i < N; i++) {
-      poles.setMatrixAt(i, horses[i].poleMatrix);
-      rods.setMatrixAt(i, horses[i].rodMatrix);
+      const h = horses[i];
+      if (h.level === 'hi' || !poleLevels.lo) poleLevels.hi.setMatrixAt(nHi++, h.poleMatrix);
+      else poleLevels.lo.setMatrixAt(nLo++, h.poleMatrix);
+      rods.setMatrixAt(i, h.rodMatrix);
+      if (horseShadow) {
+        horseShadow.setMatrixAt(i, h.matrix);
+        poleShadow.setMatrixAt(i, h.poleMatrix);
+      }
     }
-    poles.instanceMatrix.needsUpdate = true;
+    poleLevels.hi.count = nHi;
+    poleLevels.hi.instanceMatrix.needsUpdate = true;
+    if (poleLevels.lo) {
+      poleLevels.lo.count = nLo;
+      poleLevels.lo.instanceMatrix.needsUpdate = true;
+    }
     rods.instanceMatrix.needsUpdate = true;
+    for (const m of shadows) m.instanceMatrix.needsUpdate = true;
   }
 
   const tris = {};
   for (const L of levels) tris[L] = Object.values(geos[L]).reduce((s, g) => s + g.index.count / 3, 0);
 
-  return { group, horses, update, tris };
+  const herd = { group, horses, update, tris, rods, force: null };
+  return herd;
+}
+
+/**
+ * The body layer arrives with three per-vertex attributes that place the
+ * tack (strap, strapOn, hem: see strapPaint and hemPaint in horseModel.js).
+ * The far level packs them into one vec3 `tack` for giltTackMaterial; the
+ * near level, which models its tack, drops them.
+ */
+function packTack(geo, keep) {
+  const { strap, strapOn, hem } = geo.attributes;
+  if (keep && strap) {
+    const n = strap.count, a = new Float32Array(n * 3);
+    for (let i = 0; i < n; i++) {
+      a[i * 3] = strap.array[i];
+      a[i * 3 + 1] = strapOn.array[i];
+      a[i * 3 + 2] = hem.array[i];
+    }
+    geo.setAttribute('tack', new THREE.BufferAttribute(a, 3));
+  }
+  for (const k of ['strap', 'strapOn', 'hem']) geo.deleteAttribute(k);
+}
+
+/**
+ * The far horses' paint: paintMaskMaterial plus their tack painted on as
+ * gilt (gold, metal, polished) where the near level has gilt tubes: the
+ * straps round chest, belly, rump and head, a band |tack.x| < 1 across each
+ * strap's plane (where tack.y says this is that strap's part of the body),
+ * and the blanket's piping, |tack.z| < BLANKET_PIPING. Both are signed
+ * distances, so the bands stay crisp across coarse triangles.
+ */
+function giltTackMaterial(kit, params) {
+  const m = paintMaskMaterial(kit, params);
+  const paint = m.onBeforeCompile;
+  const gold = new THREE.Color(PALETTE.gold);
+  m.onBeforeCompile = (shader, renderer) => {
+    paint(shader, renderer);
+    shader.uniforms.uGilt = { value: new THREE.Vector4(gold.r, gold.g, gold.b, BLANKET_PIPING) };
+    shader.uniforms.uGiltRoughness = { value: 0.28 };
+    shader.vertexShader = shader.vertexShader
+      .replace(
+        '#include <common>',
+        `#include <common>
+        attribute vec3 tack;
+        varying vec3 vTack;`,
+      )
+      .replace(
+        '#include <color_vertex>',
+        `#include <color_vertex>
+        vTack = tack;`,
+      );
+    shader.fragmentShader = shader.fragmentShader
+      .replace(
+        '#include <common>',
+        `#include <common>
+        uniform vec4 uGilt;
+        uniform float uGiltRoughness;
+        varying vec3 vTack;`,
+      )
+      .replace(
+        'diffuseColor.rgb *= paintCol;',
+        `diffuseColor.rgb *= paintCol;
+        float tw = max(fwidth(vTack.x), 1e-4);
+        float strapGilt = clamp((1.0 - abs(vTack.x)) / tw + 0.5, 0.0, 1.0) * smoothstep(0.35, 0.65, vTack.y);
+        float hw = max(fwidth(vTack.z), 1e-6);
+        float hemGilt = clamp((uGilt.w - abs(vTack.z)) / hw + 0.5, 0.0, 1.0);
+        float gilt = max(strapGilt, hemGilt);
+        diffuseColor.rgb = mix(diffuseColor.rgb, uGilt.rgb, gilt);`,
+      )
+      .replace(
+        '#include <roughnessmap_fragment>',
+        `#include <roughnessmap_fragment>
+        roughnessFactor = mix(roughnessFactor, uGiltRoughness, gilt);`,
+      )
+      .replace(
+        '#include <metalnessmap_fragment>',
+        `#include <metalnessmap_fragment>
+        metalnessFactor = mix(metalnessFactor, 1.0, gilt);`,
+      );
+  };
+  m.customProgramCacheKey = () => 'paintMaskGiltTack1';
+  return m;
+}
+
+/**
+ * An instanced mesh drawn only into the shadow map: it holds no instances
+ * while the eyes are drawn, and `count` of them for the shadow pass alone
+ * (three.js calls onBeforeShadow/onAfterShadow around exactly that draw).
+ */
+function shadowOnly(mesh, count) {
+  mesh.castShadow = true;
+  mesh.receiveShadow = false;
+  mesh.count = 0;
+  mesh.onBeforeShadow = () => (mesh.count = count);
+  mesh.onAfterShadow = () => (mesh.count = 0);
+  return mesh;
+}
+
+// the barley-twist pole: spans -1.7 .. 2.05 relative to the horse
+const POLE = { len: 3.75, y: (2.05 + -1.7) / 2, radius: 0.048, lobes: 4, depth: 0.22, twists: 9, rows: 46, top: 2.05 - 0.06 - 0.2 };
+/**
+ * The twist the near pole actually shows. Its mesh samples the nine nominal
+ * turns only POLE.rows times, so each row advances a lobe by more than half
+ * its spacing and the ridges you see run the other way, 2.5 turns over the
+ * pole. The far pole shades that, so a pole does not change when its horse
+ * changes level.
+ */
+const SEEN_TWISTS = POLE.twists - POLE.rows / POLE.lobes;
+
+/** sleeve + knob at the top of a pole, where the crank rod attaches */
+function poleTop(seg) {
+  const top = lathe([[0, -0.2], [0.06, -0.2], [0.075, -0.15], [0.065, -0.1], [0.065, 0.0], [0.09, 0.02], [0.09, 0.06], [0.05, 0.08], [0, 0.09]], seg);
+  top.translate(0, 2.05 - 0.06, 0);
+  return top;
 }
 
 function buildPoleGeometry(hero) {
-  const len = 3.75;
   const parts = [];
-  const pole = twistedPole(len, 0.048, { lobes: 4, depth: 0.22, twists: 9, radial: hero ? 10 : 6, rows: hero ? 46 : 18 });
-  pole.translate(0, (2.05 + -1.7) / 2, 0); // spans -1.7 .. 2.05 relative to the horse
-  parts.push(pole);
-  const seg = hero ? 14 : 8;
-  // sleeve + knob at the top where the crank rod attaches
-  const top = lathe([[0, -0.2], [0.06, -0.2], [0.075, -0.15], [0.065, -0.1], [0.065, 0.0], [0.09, 0.02], [0.09, 0.06], [0.05, 0.08], [0, 0.09]], seg);
-  top.translate(0, 2.05 - 0.06, 0);
-  parts.push(top);
+  const pole = twistedPole(POLE.len, POLE.radius, { lobes: POLE.lobes, depth: POLE.depth, twists: POLE.twists, radial: hero ? 10 : 6, rows: hero ? POLE.rows : 18 });
+  pole.translate(0, POLE.y, 0);
+  parts.push(pole, poleTop(hero ? 14 : 8));
   const g = mergeGeometries(parts.map((p) => normalizeGeometry(p)), false);
   parts.forEach((p) => p.dispose());
   return g;
+}
+
+/** the far pole: a plain cylinder, about as wide as the twist's outline */
+function buildPlainPoleGeometry() {
+  const pole = new THREE.CylinderGeometry(POLE.radius * 0.96, POLE.radius * 0.96, POLE.len, 10, 1, true);
+  pole.translate(0, POLE.y, 0);
+  const parts = [pole, poleTop(8)];
+  const g = mergeGeometries(parts.map((p) => normalizeGeometry(p)), false);
+  parts.forEach((p) => p.dispose());
+  return g;
+}
+
+/**
+ * Brass for the far poles: shades the barley twist (the same lobes and
+ * depth as twistedPole, the twist as seen: SEEN_TWISTS) onto a plain cylinder by bending its normal per
+ * pixel, darkening the grooves a little, and fading the relief out where it
+ * gets finer than a couple of pixels.
+ */
+function barleyTwistMaterial(kit, params) {
+  const m = kit.brass(params);
+  m.onBeforeCompile = (shader) => {
+    // (lobes, length, twist in radians over the length, centre y); (depth/2, radius, groove shade, top of the twist)
+    shader.uniforms.uTwist = { value: new THREE.Vector4(POLE.lobes, POLE.len, SEEN_TWISTS * Math.PI * 2, POLE.y) };
+    shader.uniforms.uBump = { value: new THREE.Vector4(POLE.depth / 2, POLE.radius, 0.72, POLE.top) };
+    shader.vertexShader = shader.vertexShader
+      .replace(
+        '#include <common>',
+        `#include <common>
+        varying vec3 vPolePos;
+        varying vec3 vAxX;
+        varying vec3 vAxY;
+        varying vec3 vAxZ;`,
+      )
+      .replace(
+        '#include <begin_vertex>',
+        `#include <begin_vertex>
+        vPolePos = position;
+        #ifdef USE_INSTANCING
+          mat3 poleIm = mat3(instanceMatrix);
+        #else
+          mat3 poleIm = mat3(1.0);
+        #endif
+        vAxX = normalMatrix * (poleIm * vec3(1.0, 0.0, 0.0));
+        vAxY = normalMatrix * (poleIm * vec3(0.0, 1.0, 0.0));
+        vAxZ = normalMatrix * (poleIm * vec3(0.0, 0.0, 1.0));`,
+      );
+    shader.fragmentShader = shader.fragmentShader
+      .replace(
+        '#include <common>',
+        `#include <common>
+        uniform vec4 uTwist;
+        uniform vec4 uBump;
+        varying vec3 vPolePos;
+        varying vec3 vAxX;
+        varying vec3 vAxY;
+        varying vec3 vAxZ;`,
+      )
+      .replace(
+        '#include <normal_fragment_begin>',
+        `#include <normal_fragment_begin>
+        {
+          // surface r(a, y) = R (1 - d + d cos(lobes (a - twist(y)))), d = uBump.x
+          float a = atan(vPolePos.z, vPolePos.x);
+          float k = uTwist.z / uTwist.y; // twist per unit length
+          float ph = uTwist.x * (a - ((vPolePos.y - uTwist.w) / uTwist.y + 0.5) * uTwist.z);
+          float s = sin(ph), c = cos(ph);
+          float rr = 1.0 - uBump.x + uBump.x * c;          // r / R
+          float ra = -uBump.x * uTwist.x * s;              // (dr/da) / R
+          float ry = uBump.x * uTwist.x * k * s * uBump.y; // dr/dy
+          // fade out where a lobe gets narrower than a couple of pixels, and on the knob
+          float fw = uTwist.x * (length(fwidth(vPolePos.xz)) / uBump.y + fwidth(vPolePos.y) * k);
+          float on = (1.0 - smoothstep(1.2, 2.6, fw)) * step(vPolePos.y, uBump.w);
+          vec3 er = vec3(cos(a), 0.0, sin(a));
+          vec3 et = vec3(-er.z, 0.0, er.x);
+          vec3 n = normalize(er - on * (ra / rr) * et - on * ry * vec3(0.0, 1.0, 0.0));
+          if (on > 0.0) normal = normalize(n.x * vAxX + n.y * vAxY + n.z * vAxZ);
+          diffuseColor.rgb *= mix(1.0, mix(uBump.z, 1.0, 0.5 + 0.5 * c), on);
+        }`,
+      );
+  };
+  m.customProgramCacheKey = () => 'barleyTwist1';
+  return m;
 }
 
 export function easeOutBounce(x) {

@@ -64,3 +64,13 @@ D.poleTopToHorse = D.shaftY - D.rod - D.horseMid;
 export const HORSE_CELLS = { hi: 0.034, lo: 0.062, shelf: 0.08 };
 /** triangles in one shelf-preview horse, after simplification */
 export const MINI_HORSE_TRIS = 420;
+/**
+ * the hero's horse shadow caster (the `shadow` layer, drawn only into the
+ * shadow map): meshed at the far level's spacing, then simplified. A shadow
+ * map texel is about 2 cm of carousel at any scale, so a few hundred
+ * triangles keep the outline of a 2 m horse. Not a drawn level, so it is not
+ * in HORSE_CELLS.
+ */
+export const HORSE_SHADOW = { cell: HORSE_CELLS.lo, tris: 900 };
+/** radius of the gilt piping round a horse's saddle blanket (a tube near, painted far) */
+export const BLANKET_PIPING = 0.0095;
