@@ -206,8 +206,35 @@ function bodyColor(x, y, z) {
   return [r * (1 - s), g * (1 - s), b * (1 - s)];
 }
 
+// ------------------------------------------------- the shelf miniature
+// The pedestal preview's horse is simplified down to a few hundred
+// triangles, which separate layers would not survive (the neck would poke
+// through a thin mane), so it is one fused surface: body, mane, saddle and
+// horseshoes in a single field, a little fattened so the legs keep some body
+// at that size. Which part a vertex belongs to travels as signed distances
+// (negative = that part is on top), painted crisply by the shelf horse
+// shader. The mane is favoured by MINI_MANE so its thin ridge at the poll
+// still paints the whole crest after simplification.
+const MINI_FAT = 0.025;
+const MINI_MANE = 0.03;
+function miniParts(x, y, z) {
+  return [bodyRaw(x, y, z), maneRaw(x, y, z), saddleRaw(x, y, z), goldRaw(x, y, z)];
+}
+function miniRaw(x, y, z) {
+  const [b, m, s, g] = miniParts(x, y, z);
+  return Math.min(b, m, s, g) - MINI_FAT;
+}
+/** this part's distance minus the nearest other part's: negative where it is on top */
+const miniPart = (k, favour = 0) => (x, y, z) => {
+  const d = miniParts(x, y, z);
+  let other = Infinity;
+  for (let i = 0; i < d.length; i++) if (i !== k) other = Math.min(other, d[i]);
+  return Math.max(-0.5, Math.min(0.5, d[k] - other - favour)); // finite: the shader takes fwidth() of it
+};
+
 // ----------------------------------------------------------- public layers
 const B = [-1.15 + OX, -0.7, -0.33, 1.15 + OX, 1.0, 0.33];
+const BM = [-1.15 + OX - MINI_FAT, -0.7 - MINI_FAT, -0.33 - MINI_FAT, 1.15 + OX + MINI_FAT, 1.0 + MINI_FAT, 0.33 + MINI_FAT];
 
 export const POLE_X = 0;
 
@@ -218,6 +245,18 @@ export const layers = {
   mane: { sdf: shifted(maneRaw), bounds: [-1.15 + OX, -0.45, -0.25, 0.9 + OX, 0.98, 0.25] },
   saddle: { sdf: shifted(saddleRaw), bounds: [-0.33 + OX, 0.05, -0.3, 0.28 + OX, 0.42, 0.3] },
   gold: { sdf: shifted(goldRaw), bounds: [-1.08 + OX, -0.7, -0.2, 0.68 + OX, -0.43, 0.2] },
+  // shelf preview only: everything fused (see miniRaw)
+  mini: {
+    sdf: shifted(miniRaw),
+    bounds: BM,
+    color: (x, y, z) => bodyColor(x - OX, y, z),
+    attributes: {
+      paint: (x, y, z) => blanketRegion(x - OX, y, z),
+      mane: shifted(miniPart(1, MINI_MANE)),
+      saddle: shifted(miniPart(2)),
+      shoe: shifted(miniPart(3)),
+    },
+  },
 };
 
 /** ornament curves and points computed from the sculpted surface */

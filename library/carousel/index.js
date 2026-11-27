@@ -9,6 +9,7 @@ import { buildPlinth } from './plinth.js';
 import { buildColumn } from './column.js';
 import { buildRotor } from './rotor.js';
 import { buildHorses } from './horses.js';
+import { buildMiniature } from './miniature.js';
 
 export const info = {
   id: 'carousel',
@@ -31,6 +32,7 @@ const OMEGA = (Math.PI * 2) / 9; // rad/s at full speed: one turn every 9 s
  * @param {{ lod: 'hero'|'shelf' }} opts
  */
 export async function createCarousel(ctx, { lod = 'hero' } = {}) {
+  if (lod === 'shelf') return createMiniature(ctx);
   const hero = lod === 'hero';
   const progress = ctx.progress || (() => {});
   const kit = new MaterialKit();
@@ -257,6 +259,56 @@ export async function createCarousel(ctx, { lod = 'hero' } = {}) {
     skipAssembly() {
       timeline.finish();
     },
+    wind(amount) {
+      state.wind = Math.min(1, state.wind + amount);
+    },
+    dispose() {
+      disposeDeep(root);
+      kit.dispose();
+      events.clear();
+    },
+  };
+}
+
+/**
+ * The shelf preview: a separate, much cheaper build (see miniature.js) that
+ * turns and lifts its horses like the real one but makes no sound, has no
+ * key to wind and no assembly show.
+ */
+async function createMiniature(ctx) {
+  const kit = new MaterialKit();
+  const mini = await buildMiniature(ctx, kit);
+  const root = mini.root;
+  const state = { time: 0, wind: 0.6, speed: 0.35, angle: 0, crank: 0, musicBeat: 0, windAngle: 0, winding: false, assembled: true };
+  const events = new Emitter();
+
+  function update(dt) {
+    dt = Math.min(dt, 0.1);
+    state.time += dt;
+    // the same spring and flywheel as the hero, so it turns at the same pace
+    const target = smoothstep(0, 0.14, state.wind);
+    state.speed += (target - state.speed) * (1 - Math.exp(-dt * (target > state.speed ? 0.9 : 0.6)));
+    if (state.speed < 0.002 && target === 0) state.speed = 0;
+    state.wind = Math.max(0, state.wind - (state.speed * dt) / RUN_SECONDS);
+    state.angle += state.speed * OMEGA * dt;
+    state.crank = -state.angle * D.ratio;
+    mini.update(state);
+  }
+
+  update(0);
+
+  return {
+    info,
+    lod: 'shelf',
+    root,
+    state,
+    events,
+    interactions: [],
+    timeline: new Timeline(),
+    stats: { horseTris: { lo: mini.horseTris } },
+    update,
+    assemble() {},
+    skipAssembly() {},
     wind(amount) {
       state.wind = Math.min(1, state.wind + amount);
     },

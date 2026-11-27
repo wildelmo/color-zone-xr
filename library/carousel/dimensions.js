@@ -57,6 +57,10 @@ D.poleTopToHorse = D.shaftY - D.rod - D.horseMid;
 /**
  * grid spacing (horse units) the horses are meshed at: the hero carousel's
  * near and far levels of detail, and the shelf miniature. The test suite
- * checks the mane at these same resolutions.
+ * checks the mane at these same resolutions. (The shelf horse is the fused
+ * `mini` layer meshed at `shelf` and then simplified to MINI_HORSE_TRIS, see
+ * miniature.js; the separate body and mane layers are not drawn there.)
  */
 export const HORSE_CELLS = { hi: 0.034, lo: 0.062, shelf: 0.08 };
+/** triangles in one shelf-preview horse, after simplification */
+export const MINI_HORSE_TRIS = 420;
