@@ -1,6 +1,14 @@
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { GlowPoints } from '../core/glowPoints.js';
 import { G } from './dimensions.js';
+
+/** the little silver collar where the glass meets the rock (asset space) */
+export function collarGeometry(radial = 8, tubular = 96) {
+  const ringY = G.rimY + 1.2;
+  const ringR = Math.sqrt(G.globeR * G.globeR - (G.globeY - ringY) ** 2) + 0.4;
+  return new THREE.TorusGeometry(ringR, 0.7, radial, tubular).rotateX(Math.PI / 2).translate(0, ringY, 0);
+}
 
 /**
  * The crystal sphere: a fresnel glass shader (clear face-on, bright and
@@ -12,7 +20,7 @@ export function buildGlass(kit, { lod }) {
   const hero = lod === 'hero';
   const group = new THREE.Group();
   group.name = 'glass';
-  const geo = new THREE.SphereGeometry(G.globeR, hero ? 96 : 48, hero ? 64 : 32);
+  const geo = new THREE.SphereGeometry(G.globeR, hero ? 96 : 28, hero ? 64 : 14);
   geo.translate(0, G.globeY, 0);
   const uniforms = { uFade: { value: 1 } };
   const mat = kit.standard({ color: 0xdfeefb, roughness: 0.03, metalness: 0, transparent: true, depthWrite: false, side: THREE.DoubleSide, envMapIntensity: 1.6 });
@@ -37,13 +45,14 @@ export function buildGlass(kit, { lod }) {
   glass.renderOrder = 40;
   group.add(glass);
 
-  // a little silver collar where the glass meets the rock
-  const ringY = G.rimY + 1.2;
-  const ringR = Math.sqrt(G.globeR * G.globeR - (G.globeY - ringY) ** 2) + 0.4;
-  const collar = new THREE.Mesh(new THREE.TorusGeometry(ringR, 0.7, 8, hero ? 96 : 40).rotateX(Math.PI / 2), kit.standard({ color: 0xc8ccd4, metalness: 1, roughness: 0.25 }));
-  collar.position.y = ringY;
-  collar.name = 'glass:collar';
-  group.add(collar);
+  // a little silver collar where the glass meets the rock (the shelf
+  // preview merges its own into the rock: see index.js)
+  let collar = null;
+  if (hero) {
+    collar = new THREE.Mesh(collarGeometry(), kit.standard({ color: 0xc8ccd4, metalness: 1, roughness: 0.25 }));
+    collar.name = 'glass:collar';
+    group.add(collar);
+  }
 
   // aurora: a few curved curtains near the top of the dome
   const aurora = new THREE.Group();
@@ -82,9 +91,10 @@ export function buildGlass(kit, { lod }) {
     }),
   );
   amat.userData.noShadow = true;
+  const ribbons = [];
   for (let k = 0; k < 3; k++) {
     // a ribbon following an arc across the dome, hanging downward
-    const seg = 64;
+    const seg = hero ? 64 : 24;
     const pos = [], uv = [], idx = [];
     const a0 = k * 2.1, span = 2.2;
     const R = G.globeR - 4 - k * 3;
@@ -102,6 +112,12 @@ export function buildGlass(kit, { lod }) {
     g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
     g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
     g.setIndex(idx);
+    ribbons.push(g);
+  }
+  // (the shelf draws all three curtains at once)
+  const curtains = hero ? ribbons : [mergeGeometries(ribbons, false)];
+  if (!hero) ribbons.forEach((g) => g.dispose());
+  for (const g of curtains) {
     const m = new THREE.Mesh(g, amat);
     m.renderOrder = 30;
     m.frustumCulled = false;
@@ -109,9 +125,9 @@ export function buildGlass(kit, { lod }) {
   }
   group.add(aurora);
 
-  // stars twinkling in the upper dome
-  const nStars = hero ? 120 : 40;
-  const stars = new GlowPoints(kit, nStars, { additive: true, soft: 0.5, name: 'stars' });
+  // stars twinkling in the upper dome (too small to see on the shelf)
+  const nStars = hero ? 120 : 0;
+  const stars = nStars ? new GlowPoints(kit, nStars, { additive: true, soft: 0.5, name: 'stars' }) : null;
   const starData = [];
   for (let i = 0; i < nStars; i++) {
     const u = Math.random(), v = 0.35 + Math.random() * 0.6;
@@ -119,7 +135,7 @@ export function buildGlass(kit, { lod }) {
     const r = G.globeR - 2.5;
     starData.push([Math.cos(th) * Math.sin(ph) * r, G.globeY + Math.cos(ph) * r, Math.sin(th) * Math.sin(ph) * r, Math.random() * 6, 0.35 + Math.random() * 0.7]);
   }
-  group.add(stars.mesh);
+  if (stars) group.add(stars.mesh);
 
   return {
     group,
@@ -129,6 +145,7 @@ export function buildGlass(kit, { lod }) {
     update(t, night) {
       auroraU.uTime.value = t;
       auroraU.uLevel.value = THREE.MathUtils.clamp((night - 0.35) * 1.6, 0, 1);
+      if (!stars) return;
       for (let i = 0; i < nStars; i++) {
         const s = starData[i];
         const tw = (0.6 + 0.4 * Math.sin(t * 2 + s[3])) * night;
