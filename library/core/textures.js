@@ -7,14 +7,21 @@ import { mulberry32 } from './random.js';
  * disposed with the asset.
  */
 
-export function makeCanvas(w, h) {
+/**
+ * A 2D canvas (an OffscreenCanvas where there is one). `context` holds
+ * attributes for its 2D context, e.g. { willReadFrequently: true } for a
+ * canvas that is read back (kept on the CPU, so a read is a copy and not a
+ * GPU round trip); a canvas's first getContext call fixes them.
+ */
+export function makeCanvas(w, h, context = undefined) {
   if (typeof OffscreenCanvas !== 'undefined') {
     const c = new OffscreenCanvas(w, h);
-    if (c.getContext('2d')) return c;
+    if (c.getContext('2d', context)) return c;
   }
   const c = document.createElement('canvas');
   c.width = w;
   c.height = h;
+  if (context) c.getContext('2d', context);
   return c;
 }
 

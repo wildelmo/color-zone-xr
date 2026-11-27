@@ -10,6 +10,7 @@
  * stretched, head high, tail streaming.
  */
 import { smin, smax, sphere, ellipsoid, roundCone, chain, contour, hitSurface, smoothstep } from '../core/sdf.js';
+import { BLANKET_PIPING } from './dimensions.js';
 
 const scaleZ = (f, s) => (x, y, z) => f(x, y, z * s) / s;
 const OX = -0.06; // shift so the pole sits just in front of the saddle
@@ -232,6 +233,19 @@ const miniPart = (k, favour = 0) => (x, y, z) => {
   return Math.max(-0.5, Math.min(0.5, d[k] - other - favour)); // finite: the shader takes fwidth() of it
 };
 
+// ------------------------------------------------ the hero's shadow caster
+// The full-detail horses do not cast shadows themselves: one stand-in per
+// horse does, drawn only into the shadow map. It is body, mane and saddle in
+// one field (a horse's outline on the deck is all three), meshed and then
+// simplified (see horses.js). It is shrunk by SHADOW_INSET so that, after
+// simplification, it stays inside the drawn surface and never darkens the
+// lit side of the horse it stands in for; the shadow map's normal bias
+// covers the difference.
+const SHADOW_INSET = 0.008;
+function shadowRaw(x, y, z) {
+  return Math.min(bodyRaw(x, y, z), maneRaw(x, y, z), saddleRaw(x, y, z)) + SHADOW_INSET;
+}
+
 // ----------------------------------------------------------- public layers
 const B = [-1.15 + OX, -0.7, -0.33, 1.15 + OX, 1.0, 0.33];
 const BM = [-1.15 + OX - MINI_FAT, -0.7 - MINI_FAT, -0.33 - MINI_FAT, 1.15 + OX + MINI_FAT, 1.0 + MINI_FAT, 0.33 + MINI_FAT];
@@ -241,10 +255,24 @@ export const POLE_X = 0;
 export const layers = {
   // `paint` carries the blanket region's distance so the shader can paint a
   // crisp scalloped blanket (and a gold pinstripe) at sub-vertex precision
-  body: { sdf: shifted(bodyRaw), bounds: B, color: (x, y, z) => bodyColor(x - OX, y, z), attributes: { paint: (x, y, z) => blanketRegion(x - OX, y, z) } },
+  // `strap`, `strapOn` and `hem` place the gilt tack the far level paints on
+  // (strapPaint, hemPaint); the near level drops them and models it instead
+  body: {
+    sdf: shifted(bodyRaw),
+    bounds: B,
+    color: (x, y, z) => bodyColor(x - OX, y, z),
+    attributes: {
+      paint: (x, y, z) => blanketRegion(x - OX, y, z),
+      strap: (x, y, z) => strapPaint(x - OX, y, z)[0],
+      strapOn: (x, y, z) => strapPaint(x - OX, y, z)[1],
+      hem: (x, y, z) => hemPaint(x - OX, y, z),
+    },
+  },
   mane: { sdf: shifted(maneRaw), bounds: [-1.15 + OX, -0.45, -0.25, 0.9 + OX, 0.98, 0.25] },
   saddle: { sdf: shifted(saddleRaw), bounds: [-0.33 + OX, 0.05, -0.3, 0.28 + OX, 0.42, 0.3] },
   gold: { sdf: shifted(goldRaw), bounds: [-1.08 + OX, -0.7, -0.2, 0.68 + OX, -0.43, 0.2] },
+  // hero only, drawn into the shadow map alone (see shadowRaw)
+  shadow: { sdf: shifted(shadowRaw), bounds: B },
   // shelf preview only: everything fused (see miniRaw)
   mini: {
     sdf: shifted(miniRaw),
@@ -259,32 +287,121 @@ export const layers = {
   },
 };
 
+// ------------------------------------------------------------------ tack
+const norm = (v) => {
+  const l = Math.hypot(v[0], v[1], v[2]);
+  return [v[0] / l, v[1] / l, v[2] / l];
+};
+/**
+ * The straps that run round the body, each traced where a plane through
+ * `center` (spanned by u and v) cuts the surface, over the angles a0..a1
+ * (see contour). The near level models them as gilt tubes (details()); the
+ * far level paints them on the body (strapPaint), which is why each one must
+ * stay in its plane.
+ */
+const STRAPS = [
+  // breast collar around the front of the chest
+  { center: [0.2, 0.04, 0], u: norm([1, -0.18, 0]), v: [0, 0, 1], opts: { a0: -1.62, a1: 1.62, n: 36, offset: 0.012 }, radius: 0.017 },
+  // girth under the belly
+  { center: [0.04, 0.02, 0], u: [0, -1, 0], v: [0, 0, 1], opts: { a0: -1.25, a1: 1.25, n: 28, offset: 0.01 }, radius: 0.016 },
+  // hip strap round the rump
+  { center: [-0.3, 0.03, 0], u: norm([-1, 0.12, 0]), v: [0, 0, 1], opts: { a0: -1.58, a1: 1.58, n: 34, offset: 0.012 }, radius: 0.015 },
+  // noseband and headstall
+  { center: [0.92, 0.52, 0], u: norm([0.22, 0.28, 0]), v: [0, 0, 1], opts: { a0: 0, a1: Math.PI * 2, n: 30, offset: 0.008, maxT: 0.3, step: 0.004 }, radius: 0.012, closed: true },
+  { center: [0.735, 0.64, 0], u: norm([0.05, 1, 0]), v: [0, 0, 1], opts: { a0: 0, a1: Math.PI * 2, n: 34, offset: 0.008, maxT: 0.4, step: 0.004 }, radius: 0.012, closed: true },
+];
+const strapCurve = (s) => contour(bodyRaw, s.center, s.u, s.v, s.opts);
+
+/** the straps as planes for painting: normal, and the traced radius at each angle */
+let planes = null;
+function strapPlanes() {
+  if (planes) return planes;
+  planes = STRAPS.map((s) => {
+    const [ux, uy, uz] = s.u, [vx, vy, vz] = s.v;
+    const n = norm([uy * vz - uz * vy, uz * vx - ux * vz, ux * vy - uy * vx]);
+    // the traced curve in polar form within the plane, by angle
+    const ring = strapCurve(s)
+      .map((p) => {
+        const q = [p[0] - s.center[0], p[1] - s.center[1], p[2] - s.center[2]];
+        const a = q[0] * ux + q[1] * uy + q[2] * uz, b = q[0] * vx + q[1] * vy + q[2] * vz;
+        return [Math.atan2(b, a), Math.hypot(a, b)];
+      })
+      .sort((p, q) => p[0] - q[0]);
+    return { ...s, n, ring, amin: ring[0][0], amax: ring[ring.length - 1][0] };
+  });
+  return planes;
+}
+/** the traced radius at angle a (linear between samples; closed loops wrap) */
+function ringAt(P, a) {
+  const R = P.ring, k = R.length;
+  if (a <= R[0][0] || a >= R[k - 1][0]) {
+    if (!P.closed) return a <= R[0][0] ? R[0][1] : R[k - 1][1];
+    const [a0, r0] = R[k - 1], [a1, r1] = R[0];
+    const span = a1 + Math.PI * 2 - a0;
+    const t = ((a < a1 ? a + Math.PI * 2 : a) - a0) / span;
+    return r0 + (r1 - r0) * t;
+  }
+  let lo = 0, hi = k - 1;
+  while (hi - lo > 1) {
+    const m = (lo + hi) >> 1;
+    if (R[m][0] <= a) lo = m;
+    else hi = m;
+  }
+  const t = (a - R[lo][0]) / (R[hi][0] - R[lo][0] || 1);
+  return R[lo][1] + (R[hi][1] - R[lo][1]) * t;
+}
+/**
+ * For the far level's painted straps, per vertex: the signed distance from
+ * the nearest strap's plane in units of its radius (x), and whether this
+ * point is on that strap's part of the body at all (on): within its arc, on
+ * the surface its curve was traced on (not a leg or ear the same plane
+ * cuts). A plane's signed distance interpolates exactly across a triangle,
+ * so the shader can paint a band |x| < 1 crisply on a coarse mesh; `on`
+ * masks out the rest of the plane. Off the straps, x still follows the
+ * nearest strap's plane, so it changes sign only on a strap line.
+ */
+const STRAP_TOL = 0.06; // how far from the traced curve's radius still counts as on its surface
+function strapPaint(x, y, z) {
+  let best = null, score = Infinity, on = 0;
+  for (const P of strapPlanes()) {
+    const qx = x - P.center[0], qy = y - P.center[1], qz = z - P.center[2];
+    const d = qx * P.n[0] + qy * P.n[1] + qz * P.n[2];
+    const a = qx * P.u[0] + qy * P.u[1] + qz * P.u[2], b = qx * P.v[0] + qy * P.v[1] + qz * P.v[2];
+    const ang = Math.atan2(b, a), rho = Math.hypot(a, b);
+    const outside = P.closed ? 0 : Math.max(0, P.amin - ang, ang - P.amax) * rho;
+    const off = Math.max(0, Math.abs(rho - ringAt(P, ang)) - STRAP_TOL);
+    const s = Math.abs(d) + outside + off;
+    if (s < score) {
+      score = s;
+      best = d / P.radius;
+      on = outside === 0 && off === 0 && Math.abs(d) < P.radius * 3 ? 1 : 0;
+    }
+  }
+  return [Math.max(-8, Math.min(8, best)), on];
+}
+const HEM_H = 1e-3;
+/** distance to the saddle blanket's edge (where the gilt piping runs), its slope divided out */
+function hemPaint(x, y, z) {
+  const d = blanketRegion(x, y, z);
+  const gx = blanketRegion(x + HEM_H, y, z) - blanketRegion(x - HEM_H, y, z);
+  const gy = blanketRegion(x, y + HEM_H, z) - blanketRegion(x, y - HEM_H, z);
+  const g = Math.hypot(gx, gy) / (2 * HEM_H);
+  return Math.max(-0.5, Math.min(0.5, d / Math.max(g, 0.2)));
+}
+
 /** ornament curves and points computed from the sculpted surface */
 export function details() {
   const f = bodyRaw;
   const sh = (p) => [p[0] + OX, p[1], p[2]];
-  const norm = (v) => {
-    const l = Math.hypot(v[0], v[1], v[2]);
-    return [v[0] / l, v[1] / l, v[2] / l];
-  };
   const straps = [];
   const add = (pts, radius, closed = false) => {
     if (pts.length > 3) straps.push({ points: pts.map(sh), radius, closed });
   };
-  // breast collar around the front of the chest
-  const fd = norm([1, -0.18, 0]);
-  const breast = contour(f, [0.2, 0.04, 0], fd, [0, 0, 1], { a0: -1.62, a1: 1.62, n: 36, offset: 0.012 });
-  add(breast, 0.017);
-  // girth under the belly
-  add(contour(f, [0.04, 0.02, 0], [0, -1, 0], [0, 0, 1], { a0: -1.25, a1: 1.25, n: 28, offset: 0.01 }), 0.016);
-  // hip strap round the rump
-  const rd = norm([-1, 0.12, 0]);
-  const hip = contour(f, [-0.3, 0.03, 0], rd, [0, 0, 1], { a0: -1.58, a1: 1.58, n: 34, offset: 0.012 });
-  add(hip, 0.015);
-  // noseband and headstall
-  const hUp = norm([0.22, 0.28, 0]);
-  add(contour(f, [0.92, 0.52, 0], hUp, [0, 0, 1], { a0: 0, a1: Math.PI * 2, n: 30, offset: 0.008, maxT: 0.3, step: 0.004 }), 0.012, true);
-  add(contour(f, [0.735, 0.64, 0], norm([0.05, 1, 0]), [0, 0, 1], { a0: 0, a1: Math.PI * 2, n: 34, offset: 0.008, maxT: 0.4, step: 0.004 }), 0.012, true);
+  const [breast] = STRAPS.map((s) => {
+    const pts = strapCurve(s);
+    add(pts, s.radius, !!s.closed);
+    return pts;
+  });
   // gold piping round the painted saddle blanket: scalloped hem on both
   // sides plus the front and back edges over the back
   for (const side of [1, -1]) {
@@ -294,14 +411,14 @@ export function details() {
       const p = hitSurface(f, [x, scallopY(x), 0], [0, 0, side], 0.004, 0.4, 0.004);
       if (p) hem.push(p);
     }
-    add(hem, 0.0095);
+    add(hem, BLANKET_PIPING);
   }
   for (const end of [1, -1]) {
     const x = SADDLE_X + end * BLANKET_HALF;
     const y0 = scallopY(x);
     const c = contour(f, [x, y0 + 0.02, 0], [0, 1, 0], [0, 0, 1], { a0: -Math.PI / 2 - 0.02, a1: Math.PI / 2 + 0.02, n: 24, offset: 0.004 })
       .filter((p) => p[1] >= y0 - 0.005);
-    add(c, 0.0095);
+    add(c, BLANKET_PIPING);
   }
   // reins: bit ring -> over the neck -> pommel
   for (const side of [1, -1]) {

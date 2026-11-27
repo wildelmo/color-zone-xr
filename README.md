@@ -105,6 +105,14 @@ The headset needs HTTPS for WebXR. The dev server makes a self-signed certificat
 
 URL options: `?instant` skips the assembly show, `?asset=carousel` or `?asset=globe` picks what loads first, `?empty` starts with an empty table.
 
+In VR the gallery asks the headset for 90 Hz. If frames keep missing, it goes back to 72 Hz (the Quest browser's usual default), and only if 72 Hz still misses does it blur the edges of the view more (fixed foveation). It remembers for two weeks that 90 Hz didn't hold on a headset, so later visits start at 72. To try other settings on a headset:
+
+| Option | What it does |
+|---|---|
+| `?hz=72`, `80`, `90` or `120` | Forces the VR frame rate and turns the automatic fall-back off |
+| `?fov=0` to `1` | Fixes foveated rendering (the default is 0.6) |
+| `?scale=0.5` to `1.5` | VR render scale (the default is 1.0; higher is sharper and costs more) |
+
 ## How it stays fast on a headset
 
 The Quest is a mobile GPU, so the detail is spent where you're looking:
@@ -113,8 +121,10 @@ The Quest is a mobile GPU, so the detail is spent where you're looking:
 - **Builds never drop frames.** Heavy work is time-sliced (`Frames.step()`, about 6 ms per frame, and this works inside WebXR where `requestAnimationFrame` stops). SDF meshing runs in a worker. Textures are uploaded and shaders compiled before anything appears.
 - **Few draw calls.** `GeoBag` merges every moulding, bolt and trim into one mesh per material. Horses, poles, rods, crankshafts, comb teeth and bulbs are `InstancedMesh`es. The whole hero is about 75 draw calls.
 - **Per-horse level of detail.** Each horse layer has a high- and a low-detail instanced mesh, and every frame the nearest few horses you're looking at get the full sculpt.
-- **Painted, not modelled.** The saddle blankets are painted onto the body in the shader from a per-vertex distance field, which gives crisp scallops and a gold pinstripe without extra geometry.
-- **Detail only when it's big enough to see.** The snow globe's carved trim (window frames, timbering, railings, icicles: about 144,000 triangles) is drawn only while a piece of it would cover a couple of pixels. It's off when the globe sits on the table, and comes on when you hold it close and stretch it, zoom in on desktop, or go Up close. It never casts shadows.
+- **Painted, not modelled.** The saddle blankets are painted onto the body in the shader from a per-vertex distance field, which gives crisp scallops and a gold pinstripe without extra geometry. Horses beyond the nearest eight paint their gilt straps the same way, and their poles are plain cylinders with the barley twist shaded on. In the snow globe, window reveals, mullions, shutter louvres and door planks are paint and a normal map on the house fronts.
+- **Cheap shadows.** Horses and poles don't cast shadows themselves: simplified stand-ins, drawn only into the shadow map, do. Parts whose shadows would be a pixel or two don't cast at all.
+- **Rock that doesn't shimmer.** The island's rock, cobbles and snow are drawn by a shader with no textures. Each pattern fades to its average colour as it shrinks toward a pixel, the way a mipmapped texture would.
+- **Detail only when it's big enough to see.** The snow globe's carved trim (window frames, timbering, railings, icicles: about 78,000 triangles) is drawn only while a piece of it would cover a couple of pixels. It's off when the globe sits on the table, and comes on when you hold it close and stretch it, zoom in on desktop, or go Up close. It never casts shadows.
 - **Cheap lighting.** One spotlight with a shadow follows the hero and is re-fitted to its bounds every frame. Bulb glows are additive billboards, with no lights and no post-processing.
 
 ## The library
