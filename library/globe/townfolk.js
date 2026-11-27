@@ -4,22 +4,73 @@ import { T, STREETS, topHeight, angDist } from './terrain.js';
 
 /**
  * Townsfolk in hooded winter cloaks, strolling the ring streets: they amble,
- * stop to chat or look in a window, and walk on. One
+ * stop to chat or look in a window, and walk on, each keeping to a stretch
+ * of street that's clear of buildings (turning back at its ends), children
+ * among them. One
  * instanced mesh; each person's cloak takes its own colour (the face and
  * hands keep theirs).
  */
 const CLOAKS = ['#7a2a2a', '#2f4a6a', '#3d5a3a', '#6a4a2a', '#5a3a6a', '#8a6a2a', '#3a3a4a', '#9a4a3a'];
 
-export function buildTownfolk(kit, uniforms, townMaterial, { count = 26, seed = 7 } = {}) {
+/** is (x, z) within pad of a footprint ({x, z, r} circle or {x, z, yaw, hw, hd} rectangle)? */
+function hits(b, x, z, pad) {
+  const dx = x - b.x, dz = z - b.z;
+  if (b.r !== undefined) return dx * dx + dz * dz < (b.r + pad) ** 2;
+  const c = Math.cos(b.yaw), s = Math.sin(b.yaw);
+  return Math.abs(dx * c - dz * s) < b.hw + pad && Math.abs(dx * s + dz * c) < b.hd + pad;
+}
+
+/**
+ * The walkable stretches of a ring street: angle intervals [a0, a1] where
+ * every lane across [s0, s1] of the street is clear. A whole clear ring is
+ * returned as one interval of length 2 pi with full = true.
+ */
+export function freeStretches(ring, s0, s1, blockers, pad = 0.3, n = 720) {
+  const ok = [];
+  for (let i = 0; i < n; i++) {
+    const a = (i / n) * Math.PI * 2;
+    let free = true;
+    for (const sd of [s0, (s0 + s1) / 2, s1]) {
+      const r = ring.r + sd;
+      const x = T.hill[0] + Math.cos(a) * r, z = T.hill[1] + Math.sin(a) * r;
+      if (blockers.some((b) => hits(b, x, z, pad))) free = false;
+    }
+    ok.push(free);
+  }
+  if (ok.every(Boolean)) return [{ a0: 0, a1: Math.PI * 2, full: true }];
+  // runs of clear samples, starting just after a blocked one so runs don't wrap
+  const start = ok.indexOf(false);
+  const out = [];
+  let run = null;
+  for (let k = 1; k <= n; k++) {
+    const i = (start + k) % n;
+    if (ok[i]) {
+      if (!run) run = { i0: start + k, i1: start + k };
+      else run.i1 = start + k;
+    } else if (run) {
+      out.push(run);
+      run = null;
+    }
+  }
+  if (run) out.push(run);
+  return out
+    .map((r) => ({ a0: ((r.i0 + 1) / n) * Math.PI * 2, a1: ((r.i1 - 1) / n) * Math.PI * 2, full: false }))
+    .filter((r) => (r.a1 - r.a0) * ring.r > 3);
+}
+
+export function buildTownfolk(kit, uniforms, townMaterial, { count = 26, seed = 7, blockers = [] } = {}) {
   if (!count) return null;
   const rnd = mulberry32(seed);
   // one figure, about 1.7 m tall: cloak (tinted per person), cape, head, hood, hands
   const parts = [];
   const add = (g, col, tint = 0) => parts.push({ g, col, tint });
-  add(new THREE.CylinderGeometry(0.17, 0.36, 1.2, 9, 1).translate(0, 0.6, 0), '#ffffff', 1);
-  add(new THREE.SphereGeometry(0.25, 9, 5, 0, Math.PI * 2, 0, Math.PI / 2).translate(0, 1.18, -0.02), '#ffffff', 1); // shoulders / cape
-  add(new THREE.SphereGeometry(0.16, 9, 7).translate(0, 1.42, 0.02), '#e8c0a0');
-  add(new THREE.ConeGeometry(0.21, 0.5, 9, 1, true).translate(0, 1.6, -0.03).rotateX(-0.12), '#ffffff', 0.8); // hood
+  add(new THREE.CylinderGeometry(0.17, 0.36, 1.2, 14, 2).translate(0, 0.6, 0), '#ffffff', 1);
+  add(new THREE.SphereGeometry(0.25, 14, 5, 0, Math.PI * 2, 0, Math.PI / 2).translate(0, 1.18, -0.02), '#ffffff', 1); // shoulders / cape
+  add(new THREE.SphereGeometry(0.16, 12, 8).translate(0, 1.42, 0.02), '#e8c0a0');
+  add(new THREE.ConeGeometry(0.21, 0.5, 12, 1, true).translate(0, 1.6, -0.03).rotateX(-0.12), '#ffffff', 0.8); // hood
+  // sleeves, hanging forward a little to the hands
+  for (const s of [-1, 1]) add(new THREE.CylinderGeometry(0.07, 0.1, 0.5, 8).translate(0, -0.25, 0).rotateX(-0.35).rotateZ(s * 0.18).translate(s * 0.22, 1.18, 0.02), '#ffffff', 0.85);
+  add(new THREE.CylinderGeometry(0.18, 0.2, 0.06, 12).translate(0, 0.02, 0), '#2a2018'); // boots peeking out
   for (const s of [-1, 1]) add(new THREE.SphereGeometry(0.06, 6, 4).translate(s * 0.2, 0.92, 0.14), '#e8c0a0');
   add(new THREE.BoxGeometry(0.34, 0.06, 0.02).translate(0, 1.22, 0.19), '#ffffff', 0.4); // scarf
   const geos = parts.map(({ g, col, tint }) => {
@@ -69,18 +120,35 @@ export function buildTownfolk(kit, uniforms, townMaterial, { count = 26, seed = 
   mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
 
   const hill = T.hill;
+  // the lower ring runs just outside the inner wall's towers: keep to its outer half
+  const lanes = STREETS.rings.map((ring, k) => (k === 0 ? [0.0, ring.w * 0.22] : [-ring.w * 0.18, ring.w * 0.18]));
+  const stretches = STREETS.rings.map((ring, k) => freeStretches(ring, lanes[k][0], lanes[k][1], blockers, 0.22));
   const people = [];
   for (let i = 0; i < count; i++) {
-    const ring = STREETS.rings[i % 3 === 2 ? 1 : 0];
+    const k = i % 3 === 2 ? 1 : 0;
+    const ring = STREETS.rings[k];
+    // a stretch, chosen in proportion to its length
+    const list = stretches[k].length ? stretches[k] : [{ a0: 0, a1: Math.PI * 2, full: true }];
+    const tot = list.reduce((t, st) => t + st.a1 - st.a0, 0);
+    let pick = rnd() * tot, st = list[0];
+    for (const x of list) {
+      if (pick < x.a1 - x.a0) {
+        st = x;
+        break;
+      }
+      pick -= x.a1 - x.a0;
+    }
+    const child = rnd() < 0.2;
     people.push({
       ring,
-      a: rnd() * Math.PI * 2,
+      st,
+      a: st.a0 + rnd() * (st.a1 - st.a0),
       dir: rnd() < 0.5 ? 1 : -1,
-      speed: (0.9 + rnd() * 0.5) / ring.r, // about a metre a second
-      side: (rnd() - 0.5) * ring.w * 0.7,
+      speed: ((child ? 1.2 : 0.9) + rnd() * 0.5) / ring.r, // about a metre a second
+      side: lanes[k][0] + rnd() * (lanes[k][1] - lanes[k][0]),
       phase: rnd() * 100,
       rest: 0.05 + rnd() * 0.12,
-      s: 0.9 + rnd() * 0.15,
+      s: child ? 0.6 + rnd() * 0.08 : 0.9 + rnd() * 0.15,
     });
     mesh.setColorAt(i, new THREE.Color(CLOAKS[Math.floor(rnd() * CLOAKS.length)]));
   }
@@ -98,6 +166,16 @@ export function buildTownfolk(kit, uniforms, townMaterial, { count = 26, seed = 
         // amble, with pauses: speed eases to zero now and then
         const go = THREE.MathUtils.clamp(Math.sin(t * w.rest + w.phase) * 2.5 + 0.9, 0, 1);
         w.a += w.dir * w.speed * go * dt;
+        // turn back at the ends of a stretch
+        if (!w.st.full) {
+          if (w.a > w.st.a1) {
+            w.a = w.st.a1;
+            w.dir = -1;
+          } else if (w.a < w.st.a0) {
+            w.a = w.st.a0;
+            w.dir = 1;
+          }
+        }
         const r = w.ring.r + w.side;
         const x = hill[0] + Math.cos(w.a) * r, z = hill[1] + Math.sin(w.a) * r;
         let y = topHeight(x, z);

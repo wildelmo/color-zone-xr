@@ -118,6 +118,14 @@ const views = await p.evaluate(async () => {
     v.push({ name: 'snowman-close', at: w(sm[0] + ox * 1.6 + oz * 1.2, sm[1] + 1.9, sm[2] + oz * 1.6 - ox * 1.2), look: w(sm[0], sm[1] + 0.9, sm[2]) });
     v.push({ name: 'snowman-2', at: w(a.debug.snowmen[1][0] * 1.2, a.debug.snowmen[1][1] + 7, a.debug.snowmen[1][2] * 1.2), look: w(a.debug.snowmen[1][0], a.debug.snowmen[1][1] + 0.9, a.debug.snowmen[1][2]) });
   }
+  // a few townsfolk, close (wherever they've walked to by now)
+  const fm = new THREE.Matrix4(), fp = new THREE.Vector3();
+  for (const i of [0, 4]) {
+    a.debug.folk.mesh.getMatrixAt(i, fm);
+    fp.setFromMatrixPosition(fm);
+    const ol = Math.hypot(fp.x, fp.z);
+    v.push({ name: `folk-${i}`, at: w(fp.x + (fp.x / ol) * 2.2, fp.y + 2.4, fp.z + (fp.z / ol) * 2.2), look: w(fp.x, fp.y + 0.8, fp.z) });
+  }
   // down the lower ring street
   const hill = T.hill;
   const sa = gate - 0.6;

@@ -128,6 +128,8 @@ export async function buildTown(kit, uniforms, { lod = 'hero', seed = 11, step =
   // obstacles for the dragons: circles with a top height (island-local)
   const obstacles = [];
   const obstacle = (x, z, r, top) => obstacles.push({ x, z, r, top });
+  // ground footprints of everything people can't walk through: { x, z, r } or { x, z, yaw, hw, hd }
+  const blockers = [];
 
   /**
    * One storey of walls: a closed ring of façade bays around a w x d
@@ -471,6 +473,7 @@ export async function buildTown(kit, uniforms, { lod = 'hero', seed = 11, step =
     }
     const tip = cb + r * 2.4;
     obstacle(x, z, r + 0.7, tip + 1.6);
+    blockers.push({ x, z, r: r + 0.3 });
     // a dragon can sit on top of the cone, by the finial
     if (perch) perches.push({ p: new THREE.Vector3(x, tip + 0.15, z), yaw: rnd() * Math.PI * 2, kind: 'tower' });
     return g0 + h;
@@ -662,6 +665,7 @@ export async function buildTown(kit, uniforms, { lod = 'hero', seed = 11, step =
     storey(hm, 10, 5.2, 3.1, 2.8, 1, () => 2, [0.08, g0], 0.3);
     pitchedRoof(hm.clone().multiply(mat(0, 5.9, 0)), 10, 5.2, true, 1.6, '#5b6b7c', 1, [0.08, g0], 0.4, { look: plainLook });
     obstacle(hx, hz, 6.0, g0 + 0.2 + 5.9 + 4.4);
+    blockers.push({ x: cx, z: cz, r: 6.6 }, { x: hx, z: hz, yaw: Math.PI / 2, hw: 5.3, hd: 2.9 });
   }
 
   // ----------------------------------------------------------- cathedral
@@ -675,6 +679,11 @@ export async function buildTown(kit, uniforms, { lod = 'hero', seed = 11, step =
     storey(m, W, L, 3.1, 2.8, 1, () => 2, build, 0.2);
     pitchedRoof(m.clone().multiply(mat(0, 5.9, 0)), W, L, false, 1.85, '#3f4a5a', 1, build, 0.2, { look: plainLook });
     obstacle(cath.x, cath.y, 7.0, g0 + 5.9 + 5.2);
+    {
+      // from the apse to the bell tower, buttresses included
+      const cc = new THREE.Vector3(0, 0, 0.3).applyMatrix4(m);
+      blockers.push({ x: cc.x, z: cc.z, yaw, hw: W / 2 + 1.0, hd: (L + 5.8) / 2 + 0.3 });
+    }
     // buttresses
     for (let k = 0; k < 4; k++) {
       for (const s of [1, -1]) {
@@ -742,6 +751,7 @@ export async function buildTown(kit, uniforms, { lod = 'hero', seed = 11, step =
     bag.add(lathe([[0, 0], [2.0, 0], [1.9, 0.4], [1.5, 6.5], [1.6, 6.7], [0, 6.7]], hero ? 16 : 10), mat(mill.x, g0, mill.y), 'stone', '#d8d0c0', { build, lit: 2 });
     bag.add(new THREE.ConeGeometry(1.9, 2.4, hero ? 16 : 10), mat(mill.x, g0 + 7.9, mill.y), 'roof', '#6e4a3a', { build, lit: 2 });
     obstacle(mill.x, mill.y, 5.2, g0 + 10.2);
+    blockers.push({ x: mill.x, z: mill.y, r: 2.4 });
     sails = new THREE.Group();
     const out = new THREE.Vector3(mill.x, 0, mill.y).normalize();
     sails.position.set(mill.x + out.x * 1.9, g0 + 6.4, mill.y + out.z * 1.9);
@@ -785,6 +795,7 @@ export async function buildTown(kit, uniforms, { lod = 'hero', seed = 11, step =
     const wy = topHeight(gx, gz);
     const wb = [orderOf(gx, gz), wy];
     bag.add(new THREE.CylinderGeometry(0.9, 0.95, 0.9, 14, 1, true), mat(gx, wy + 0.45, gz), 'stone', '#a8a196', { build: wb, lit: 2 });
+    blockers.push({ x: gx, z: gz, r: 1.2 });
     for (const s of [1, -1]) bag.add(new THREE.BoxGeometry(0.12, 2.2, 0.12), mat(gx + s * 0.8, wy + 1.1, gz), 'wood', '#4a3020', { build: wb, lit: 2 });
     bag.add(new THREE.ConeGeometry(1.3, 0.9, 4, 1, true).rotateY(Math.PI / 4), mat(gx, wy + 2.55, gz), 'roof', '#8a4434', { build: wb, lit: 2 });
     lanterns.push(new THREE.Vector3(gx, wy + 2.1, gz + 0.9));
@@ -840,6 +851,7 @@ export async function buildTown(kit, uniforms, { lod = 'hero', seed = 11, step =
       if (houses.some((h) => Math.hypot(h.x - x, h.z - z) < Math.max(h.w, h.d) * 0.5 + 1.0)) continue;
       const y = topHeight(x, z);
       stalls.push([x, z]);
+      blockers.push({ x, z, r: 1.4 });
       const build = [orderOf(x, z) + 0.05, y];
       const attrs = { build, lit: 2 };
       // face the middle of the plaza
@@ -900,6 +912,7 @@ export async function buildTown(kit, uniforms, { lod = 'hero', seed = 11, step =
     for (const [x, z] of spots) {
       const y = topHeight(x, z) - 0.05;
       snowmen.push([x, y, z]);
+      blockers.push({ x, z, r: 0.7 });
       const sa = { build: [orderOf(x, z) + 0.06, y], lit: 2 };
       const sm = mat(x, y, z, 0, Math.atan2(-x, -z) + (drnd() - 0.5));
       const ball = (r, yy) => bag.add(new THREE.IcosahedronGeometry(r, 2), sm.clone().multiply(mat(0, yy, 0, 0, drnd() * 3, 0, 1, 0.92, 1)), 'snow', '#f2f5fa', sa);
@@ -935,6 +948,8 @@ export async function buildTown(kit, uniforms, { lod = 'hero', seed = 11, step =
     }
   }
 
+  // (the ground floor's walls; jettied floors overhang above head height; the doorstep sticks out at the front)
+  for (const h of houses) blockers.push({ x: h.x, z: h.z, yaw: h.yaw, hw: h.w / 2 + 0.12, hd: h.d / 2 + 0.3 });
   for (const p of DT.lamps) lanterns.push(p);
   if (step) await step();
   const group = bag.build(mats, { name: 'town' });
@@ -957,6 +972,7 @@ export async function buildTown(kit, uniforms, { lod = 'hero', seed = 11, step =
     heightAt: heights.heightAt,
     houses: houses.length,
     chimneys: DT.chimneys,
+    blockers,
     fairy: DT.fairy,
     /** where each house stands (island-local), for inspection */
     houseList: houses.map(({ x, z, w, d, y, yaw, floors, style, wallsH, roofH, sign = false, balcony = false, lights = false }) => ({ x, z, w, d, y, yaw, floors, style, wallsH, roofH, sign, balcony, lights })),

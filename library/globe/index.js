@@ -109,7 +109,7 @@ export async function createGlobe(ctx, { lod = 'hero' } = {}) {
   }
   const smoke = hero ? buildSmoke(kit, town.chimneys) : null;
   if (smoke) island.add(smoke.mesh);
-  const folk = hero ? buildTownfolk(kit, U, townMaterial, { count: 26 }) : null;
+  const folk = hero ? buildTownfolk(kit, U, townMaterial, { count: 26, blockers: town.blockers }) : null;
   if (folk) island.add(folk.mesh);
   await ctx.step();
 
@@ -317,7 +317,7 @@ export async function createGlobe(ctx, { lod = 'hero' } = {}) {
     interactions,
     timeline,
     stats: { houses: town.houses },
-    debug: { dragons: dragons.dragons, perches, snow, simulateDragons: dragons.simulate, heightAt, houses: town.houseList, snowmen: town.snowmen, island, uniforms: U },
+    debug: { dragons: dragons.dragons, perches, snow, simulateDragons: dragons.simulate, heightAt, houses: town.houseList, snowmen: town.snowmen, island, uniforms: U, folk },
     update,
     assemble() {
       timeline.play();
