@@ -101,6 +101,12 @@ export async function createGlobe(ctx, { lod = 'hero' } = {}) {
   const lights = new BulbString({ radius: 0.12, glow: 1.4, detail: hero ? 1 : 0 });
   town.lanterns.forEach((p, i) => lights.add(p, 0, i, town.lanterns.length, '#ffc070'));
   island.add(lights.build(kit));
+  // little string lights along some eaves
+  const fairy = town.fairy.length ? new BulbString({ radius: 0.045, glow: 0.42, detail: 0 }) : null;
+  if (fairy) {
+    town.fairy.forEach((b, i) => fairy.add(b.p, 0, i, town.fairy.length, b.color));
+    island.add(fairy.build(kit));
+  }
   const smoke = hero ? buildSmoke(kit, town.chimneys) : null;
   if (smoke) island.add(smoke.mesh);
   const folk = hero ? buildTownfolk(kit, U, townMaterial, { count: 26 }) : null;
@@ -297,6 +303,7 @@ export async function createGlobe(ctx, { lod = 'hero' } = {}) {
     crystals.update(state.time);
     glass.update(state.time, state.night);
     lights.update(state.time, 0.02);
+    fairy?.update(state.time, 0.04);
   }
 
   update(0);
@@ -310,7 +317,7 @@ export async function createGlobe(ctx, { lod = 'hero' } = {}) {
     interactions,
     timeline,
     stats: { houses: town.houses },
-    debug: { dragons: dragons.dragons, perches, snow, simulateDragons: dragons.simulate, heightAt, houses: town.houseList, island },
+    debug: { dragons: dragons.dragons, perches, snow, simulateDragons: dragons.simulate, heightAt, houses: town.houseList, snowmen: town.snowmen, island, uniforms: U },
     update,
     assemble() {
       timeline.play();

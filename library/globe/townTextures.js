@@ -446,3 +446,110 @@ export function roseWindow() {
   ctx.fill();
   return canvasTexture(c);
 }
+
+/**
+ * Painted shop signs, 4 x 2: key, boot, loaf, mug, fish, scissors, candle,
+ * pretzel, in gilt on dark boards with a border.
+ */
+export function signAtlas() {
+  const W = 128, H = 96;
+  const c = makeCanvas(W * 4, H * 2);
+  const ctx = c.getContext('2d');
+  const boards = ['#2a3a5a', '#5a2a22', '#2f4a32', '#3a2a1a'];
+  for (let i = 0; i < 8; i++) {
+    const x0 = (i % 4) * W, y0 = Math.floor(i / 4) * H;
+    ctx.save();
+    ctx.translate(x0, y0);
+    ctx.fillStyle = boards[i % 4];
+    ctx.fillRect(0, 0, W, H);
+    ctx.strokeStyle = '#d9a84e';
+    ctx.lineWidth = 4;
+    ctx.strokeRect(6, 6, W - 12, H - 12);
+    ctx.fillStyle = '#e8c070';
+    ctx.strokeStyle = '#e8c070';
+    ctx.lineWidth = 6;
+    ctx.lineCap = 'round';
+    ctx.translate(W / 2, H / 2);
+    ctx.beginPath();
+    if (i === 0) {
+      // key
+      ctx.arc(-26, 0, 12, 0, Math.PI * 2);
+      ctx.moveTo(-14, 0);
+      ctx.lineTo(30, 0);
+      ctx.moveTo(22, 0);
+      ctx.lineTo(22, 12);
+      ctx.moveTo(30, 0);
+      ctx.lineTo(30, 10);
+      ctx.stroke();
+    } else if (i === 1) {
+      // boot
+      ctx.moveTo(-10, -26);
+      ctx.lineTo(4, -26);
+      ctx.lineTo(4, 8);
+      ctx.lineTo(30, 14);
+      ctx.lineTo(30, 24);
+      ctx.lineTo(-12, 24);
+      ctx.closePath();
+      ctx.fill();
+    } else if (i === 2) {
+      // loaf with slashes
+      ctx.ellipse(0, 4, 34, 18, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = boards[2];
+      ctx.lineWidth = 3;
+      for (let k = -1; k <= 1; k++) {
+        ctx.beginPath();
+        ctx.moveTo(k * 14 - 6, -6);
+        ctx.lineTo(k * 14 + 6, 12);
+        ctx.stroke();
+      }
+    } else if (i === 3) {
+      // mug with foam
+      ctx.fillRect(-18, -14, 30, 36);
+      ctx.beginPath();
+      ctx.arc(-3, -16, 16, Math.PI, 0);
+      ctx.fill();
+      ctx.lineWidth = 6;
+      ctx.beginPath();
+      ctx.arc(14, 4, 10, -Math.PI / 2, Math.PI / 2);
+      ctx.stroke();
+    } else if (i === 4) {
+      // fish
+      ctx.ellipse(-4, 0, 26, 13, 0, 0, Math.PI * 2);
+      ctx.moveTo(18, 0);
+      ctx.lineTo(34, -14);
+      ctx.lineTo(34, 14);
+      ctx.closePath();
+      ctx.fill();
+    } else if (i === 5) {
+      // scissors
+      ctx.arc(-18, -12, 9, 0, Math.PI * 2);
+      ctx.moveTo(-9, 12);
+      ctx.arc(-18, 12, 9, 0, Math.PI * 2);
+      ctx.moveTo(-10, -8);
+      ctx.lineTo(32, 10);
+      ctx.moveTo(-10, 8);
+      ctx.lineTo(32, -10);
+      ctx.stroke();
+    } else if (i === 6) {
+      // candle with a flame
+      ctx.fillRect(-8, -6, 16, 32);
+      ctx.beginPath();
+      ctx.moveTo(0, -30);
+      ctx.quadraticCurveTo(10, -14, 0, -10);
+      ctx.quadraticCurveTo(-10, -14, 0, -30);
+      ctx.fill();
+    } else {
+      // pretzel
+      ctx.arc(-12, 0, 14, 0, Math.PI * 2);
+      ctx.moveTo(26, 0);
+      ctx.arc(12, 0, 14, 0, Math.PI * 2);
+      ctx.moveTo(-6, 18);
+      ctx.lineTo(0, 26);
+      ctx.lineTo(6, 18);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+  return canvasTexture(c);
+}

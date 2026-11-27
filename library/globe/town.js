@@ -1,8 +1,8 @@
 import * as THREE from 'three';
 import { GeoBag, lathe, mat } from '../core/geometry.js';
 import { mulberry32 } from '../core/random.js';
-import { T, STREETS, edgeR, topHeight, angDist, terraceOf } from './terrain.js';
-import { facadeAtlas, tileUV, roofTiles, stoneBlocks, woodGrain, roseWindow } from './townTextures.js';
+import { T, STREETS, edgeR, topHeight, angDist, terraceOf, streetMask } from './terrain.js';
+import { facadeAtlas, tileUV, roofTiles, stoneBlocks, woodGrain, roseWindow, signAtlas } from './townTextures.js';
 import { makeDetailer, houseLook } from './details.js';
 
 /**
@@ -85,16 +85,19 @@ export async function buildTown(kit, uniforms, { lod = 'hero', seed = 11, step =
     kit.trackTexture(t.normal);
   }
   const rose = kit.trackTexture(roseWindow());
+  const signs = kit.trackTexture(signAtlas());
   const mats = {
     walls: townMaterial(kit, { map: atlas.map, emissiveMap: atlas.emissive, emissive: 0xffffff, emissiveIntensity: 1.4, roughness: 0.8 }, uniforms),
-    roof: townMaterial(kit, { map: roofTex.map, normalMap: roofTex.normal, normalScale: new THREE.Vector2(1, 1), vertexColors: true, roughness: 0.65 }, uniforms),
+    roof: townMaterial(kit, { map: roofTex.map, normalMap: roofTex.normal, normalScale: new THREE.Vector2(1, 1), vertexColors: true, roughness: 0.65 }, uniforms, { snow: false }),
     stone: townMaterial(kit, { map: stoneTex.map, normalMap: stoneTex.normal, normalScale: new THREE.Vector2(1.2, 1.2), vertexColors: true, roughness: 0.85 }, uniforms),
     wood: townMaterial(kit, { map: woodTex.map, normalMap: woodTex.normal, normalScale: new THREE.Vector2(0.6, 0.6), vertexColors: true, roughness: 0.72 }, uniforms),
     gold: townMaterial(kit, { color: 0xd9a84e, metalness: 1, roughness: 0.3 }, uniforms, { snow: false }),
     glass: townMaterial(kit, { map: rose, emissiveMap: rose, emissive: 0xffffff, emissiveIntensity: 1.6, roughness: 0.3 }, uniforms, { snow: false }),
     snow: townMaterial(kit, { vertexColors: true, roughness: 0.95 }, uniforms, { snow: false }),
+    signs: townMaterial(kit, { map: signs, roughness: 0.55 }, uniforms, { snow: false }),
     ice: townMaterial(kit, { color: 0xd6eeff, roughness: 0.12, metalness: 0.1 }, uniforms, { snow: false }),
   };
+  roofDrifts(mats.roof);
   const bag = new GeoBag();
   // stone, wood and roof parts get UVs in real-world units, so the blocks,
   // grain and tiles are the same size everywhere (not squeezed onto small
@@ -126,7 +129,7 @@ export async function buildTown(kit, uniforms, { lod = 'hero', seed = 11, step =
    * rectangle in the frame m (local y from y0 to y0 + h). Corners meet
    * exactly, so there are no gaps. kindOf(wall, bay, bays) picks the tile.
    */
-  const storey = (m, w, d, y0, h, style, kindOf, build, lit, look = null, upper = false) => {
+  const storey = (m, w, d, y0, h, style, kindOf, build, lit, look = null, upper = false, floor = 0) => {
     const P = [[-w / 2, d / 2], [w / 2, d / 2], [w / 2, -d / 2], [-w / 2, -d / 2]];
     const pos = [], uv = [], idx = [];
     let vi = 0;
@@ -141,7 +144,10 @@ export async function buildTown(kit, uniforms, { lod = 'hero', seed = 11, step =
       if (look) DT.timbers(fw, len, h, bays, style, upper, attrs);
       for (let b = 0; b < bays; b++) {
         const kind = kindOf(k, b, bays);
-        if (look) DT.bay(fw.clone().multiply(mat((len * b) / bays, 0, 0)), len / bays, h, style, kind, look, attrs, k === 2);
+        if (look) {
+          const balcony = look.balcony && floor === 1 && k === 0 && kind === 2 && b === Math.floor(bays / 2);
+          DT.bay(fw.clone().multiply(mat((len * b) / bays, 0, 0)), len / bays, h, style, kind, look, attrs, k === 2, { balcony });
+        }
         const [u0, v0, u1, v1] = tileUV(style, kind);
         const ax = x0 + ((x1 - x0) * b) / bays, az = z0 + ((z1 - z0) * b) / bays;
         const cx = x0 + ((x1 - x0) * (b + 1)) / bays, cz = z0 + ((z1 - z0) * (b + 1)) / bays;
@@ -276,7 +282,7 @@ export async function buildTown(kit, uniforms, { lod = 'hero', seed = 11, step =
     for (let f = 0; f < floors; f++) {
       const hh = f === 0 ? 3.1 : 2.8;
       const ww = h.w + 2 * jet * f, dd = h.d + 2 * jet * f;
-      storey(m, ww, dd, y0, hh, style, (k, b) => (f === 0 ? (k === 0 && b === doorBay ? 0 : 1) : rnd() < 0.8 ? 2 : 3), build, lit + f * 0.04, look, f > 0);
+      storey(m, ww, dd, y0, hh, style, (k, b) => (f === 0 ? (k === 0 && b === doorBay ? 0 : 1) : rnd() < 0.8 ? 2 : 3), build, lit + f * 0.04, look, f > 0, f);
       if (f > 0 && jet) bag.add(new THREE.BoxGeometry(ww + 0.1, 0.18, dd + 0.1), m.clone().multiply(mat(0, y0 + 0.02, 0)), 'wood', '#3a2618', { build, lit: 2 });
       y0 += hh;
     }
@@ -311,13 +317,28 @@ export async function buildTown(kit, uniforms, { lod = 'hero', seed = 11, step =
     }
     // stone foundation reaching down the slope
     bag.add(new THREE.BoxGeometry(h.w + 0.2, 2.2, h.d + 0.2), m.clone().multiply(mat(0, -1.0, 0)), 'stone', '#8a847a', { build, lit: 2 });
-    // a hanging shop sign now and then
+    // a hanging shop sign now and then: a wrought-iron bracket and a painted board
     if (hero && rnd() < 0.25) {
-      bag.add(new THREE.BoxGeometry(0.06, 0.06, 0.8), m.clone().multiply(mat(h.w * 0.35, 2.6, h.d / 2 + 0.4)), 'wood', '#3a2618', { build, lit: 2 });
-      bag.add(new THREE.BoxGeometry(0.06, 0.55, 0.65), m.clone().multiply(mat(h.w * 0.35, 2.25, h.d / 2 + 0.55)), 'wood', ['#7a2a22', '#2a4a6a', '#3a5a32'][Math.floor(rnd() * 3)], { build, lit: 2 });
+      rnd(); // (kept so the town's layout stays the same)
+      h.sign = true;
+      const sx = h.w * 0.35, sy = 2.75, sz = h.d / 2;
+      const iron = '#1e1a18', sa = { build, lit: 2 };
+      bag.add(new THREE.BoxGeometry(0.05, 0.05, 0.95), m.clone().multiply(mat(sx, sy, sz + 0.47)), 'wood', iron, sa);
+      bag.add(new THREE.BoxGeometry(0.035, 0.035, 0.75), m.clone().multiply(mat(sx, sy - 0.27, sz + 0.27, 0.78)), 'wood', iron, sa);
+      bag.add(new THREE.TorusGeometry(0.1, 0.015, 4, 10, Math.PI * 1.5).rotateY(Math.PI / 2), m.clone().multiply(mat(sx, sy - 0.1, sz + 0.75)), 'wood', iron, sa);
+      for (const cz of [0.3, 0.82]) bag.add(new THREE.BoxGeometry(0.015, 0.1, 0.015), m.clone().multiply(mat(sx, sy - 0.07, sz + cz)), 'wood', iron, sa);
+      const sym = Math.floor(drnd() * 8);
+      const u0 = (sym % 4) / 4, v1 = 1 - Math.floor(sym / 4) / 2;
+      for (const side of [1, -1]) {
+        const q = new THREE.PlaneGeometry(0.62, 0.46);
+        const uv = q.attributes.uv;
+        for (let i = 0; i < 4; i++) uv.setXY(i, side > 0 ? u0 + uv.getX(i) * 0.25 : u0 + 0.25 - uv.getX(i) * 0.25, v1 - 0.5 + uv.getY(i) * 0.5);
+        bag.add(q, m.clone().multiply(mat(sx + side * 0.026, sy - 0.38, sz + 0.56, 0, (side * Math.PI) / 2)), 'signs', undefined, sa);
+      }
+      bag.add(new THREE.BoxGeometry(0.045, 0.5, 0.66), m.clone().multiply(mat(sx, sy - 0.38, sz + 0.56)), 'wood', '#3a2618', sa);
     }
     obstacle(h.x, h.z, Math.hypot(W, D) / 2 + 0.4, y + y0 + chimneyTop + 0.3);
-    Object.assign(h, { y, yaw, floors, style, wallsH: y0, roofH: roof.R });
+    Object.assign(h, { y, yaw, floors, style, wallsH: y0, roofH: roof.R, balcony: look.balcony && floors >= 2, lights: !!look.lights });
   }
 
   if (step) await step();
@@ -677,6 +698,7 @@ export async function buildTown(kit, uniforms, { lod = 'hero', seed = 11, step =
   }
 
   // --------------------------------------------------------- market stalls
+  const stalls = [];
   if (hero) {
     const ga = T.gateA;
     const pc = new THREE.Vector2(Math.cos(ga) * (T.edge - 5.5), Math.sin(ga) * (T.edge - 5.5));
@@ -691,6 +713,7 @@ export async function buildTown(kit, uniforms, { lod = 'hero', seed = 11, step =
       if (STREETS.rings.some((ring) => Math.abs(rh - ring.r) < ring.w * 0.5 + 0.9)) continue;
       if (houses.some((h) => Math.hypot(h.x - x, h.z - z) < Math.max(h.w, h.d) * 0.5 + 1.0)) continue;
       const y = topHeight(x, z);
+      stalls.push([x, z]);
       const build = [orderOf(x, z) + 0.05, y];
       const attrs = { build, lit: 2 };
       // face the middle of the plaza
@@ -709,6 +732,64 @@ export async function buildTown(kit, uniforms, { lod = 'hero', seed = 11, step =
       bag.add(new THREE.CylinderGeometry(0.24, 0.24, 0.62, 10), sm.clone().multiply(mat(-1.15, 0.31, 0.2)), 'wood', '#5a3a24', attrs);
       for (const by of [0.1, 0.52]) bag.add(new THREE.CylinderGeometry(0.255, 0.255, 0.05, 10, 1, true), sm.clone().multiply(mat(-1.15, by, 0.2)), 'gold', undefined, attrs);
       n++;
+    }
+  }
+
+  // --------------------------------------------------------------- snowmen
+  const snowmen = [];
+  if (hero) {
+    // open, level snow: off the streets, clear of houses, stalls, the well,
+    // the landmarks, the river and the walls; one near the gate plaza (you
+    // see it as you arrive), the others spread out
+    const ga = T.gateA;
+    const well = [Math.cos(ga) * (T.edge - 6.4), Math.sin(ga) * (T.edge - 6.4)];
+    const plazaC = [Math.cos(ga) * (T.edge - 5.5), Math.sin(ga) * (T.edge - 5.5)];
+    const open = [];
+    for (let x = -T.edge; x <= T.edge; x += 0.75) {
+      for (let z = -T.edge; z <= T.edge; z += 0.75) {
+        const r = Math.hypot(x, z), a = Math.atan2(z, x);
+        if (r > edgeR(a) - 3.6 || streetMask(x, z) > 0.05) continue;
+        if (angDist(a, T.ravineA) * r < T.ravineW + 1.2 || T.streams.some((sa) => angDist(a, sa) * r < 1.8)) continue;
+        if (houses.some((h) => Math.hypot(h.x - x, h.z - z) < Math.max(h.w, h.d) * 0.5 + 0.8)) continue;
+        if (stalls.some(([sx, sz]) => Math.hypot(sx - x, sz - z) < 2.2) || Math.hypot(x - well[0], z - well[1]) < 1.8) continue;
+        if (plots.some(([px, pz, pr]) => Math.hypot(x - px, z - pz) < pr + 0.6) || Math.hypot(x - hill.x, z - hill.y) < 8) continue;
+        const y0 = topHeight(x, z);
+        if ([[0.6, 0], [-0.6, 0], [0, 0.6], [0, -0.6]].some(([dx, dz]) => Math.abs(topHeight(x + dx, z + dz) - y0) > 0.2)) continue;
+        open.push([x, z]);
+      }
+    }
+    const spots = [];
+    const near = open.filter(([x, z]) => Math.hypot(x - plazaC[0], z - plazaC[1]) < 6).sort((p, q) => Math.hypot(p[0] - plazaC[0], p[1] - plazaC[1]) - Math.hypot(q[0] - plazaC[0], q[1] - plazaC[1]));
+    if (near.length) spots.push(near[Math.min(near.length - 1, 2)]);
+    while (spots.length < 3 && open.length) {
+      // the open spot farthest from those already chosen
+      let best = null, bd = -1;
+      for (const p of open) {
+        const d = spots.length ? Math.min(...spots.map((q) => Math.hypot(p[0] - q[0], p[1] - q[1]))) : drnd();
+        if (d > bd) [best, bd] = [p, d];
+      }
+      if (bd < 4) break;
+      spots.push(best);
+    }
+    for (const [x, z] of spots) {
+      const y = topHeight(x, z) - 0.05;
+      snowmen.push([x, y, z]);
+      const sa = { build: [orderOf(x, z) + 0.06, y], lit: 2 };
+      const sm = mat(x, y, z, 0, Math.atan2(-x, -z) + (drnd() - 0.5));
+      const ball = (r, yy) => bag.add(new THREE.IcosahedronGeometry(r, 2), sm.clone().multiply(mat(0, yy, 0, 0, drnd() * 3, 0, 1, 0.92, 1)), 'snow', '#f2f5fa', sa);
+      ball(0.42, 0.36);
+      ball(0.31, 0.95);
+      ball(0.22, 1.38);
+      const dot = (xx, yy, zz, r = 0.035) => bag.add(new THREE.IcosahedronGeometry(r, 0), sm.clone().multiply(mat(xx, yy, zz)), 'stone', '#151312', sa);
+      dot(-0.08, 1.45, 0.19);
+      dot(0.08, 1.45, 0.19);
+      for (const yy of [0.82, 0.97, 1.12]) dot(0, yy, 0.3 - Math.abs(yy - 0.97) * 0.25, 0.03);
+      bag.add(new THREE.ConeGeometry(0.035, 0.22, 6).rotateX(Math.PI / 2), sm.clone().multiply(mat(0, 1.38, 0.3)), 'wood', '#e8762a', sa);
+      bag.add(new THREE.TorusGeometry(0.2, 0.05, 6, 14).rotateX(Math.PI / 2), sm.clone().multiply(mat(0, 1.2, 0)), 'wood', '#b8202a', sa);
+      bag.add(new THREE.BoxGeometry(0.09, 0.32, 0.03), sm.clone().multiply(mat(0.12, 1.06, 0.19, 0.2, 0, 0.15)), 'wood', '#b8202a', sa);
+      bag.add(new THREE.CylinderGeometry(0.2, 0.2, 0.03, 12), sm.clone().multiply(mat(0, 1.57, 0)), 'wood', '#1a1a1e', sa);
+      bag.add(new THREE.CylinderGeometry(0.13, 0.14, 0.24, 12), sm.clone().multiply(mat(0, 1.7, 0)), 'wood', '#1a1a1e', sa);
+      for (const sd of [-1, 1]) bag.add(new THREE.CylinderGeometry(0.015, 0.02, 0.55, 5), sm.clone().multiply(mat(sd * 0.48, 1.02, 0, 0, 0, sd * -1.0)), 'wood', '#3a2618', sa);
     }
   }
 
@@ -748,8 +829,10 @@ export async function buildTown(kit, uniforms, { lod = 'hero', seed = 11, step =
     heightAt: heights.heightAt,
     houses: houses.length,
     chimneys: DT.chimneys,
+    fairy: DT.fairy,
     /** where each house stands (island-local), for inspection */
-    houseList: houses.map(({ x, z, w, d, y, yaw, floors, style, wallsH, roofH }) => ({ x, z, w, d, y, yaw, floors, style, wallsH, roofH })),
+    houseList: houses.map(({ x, z, w, d, y, yaw, floors, style, wallsH, roofH, sign = false, balcony = false, lights = false }) => ({ x, z, w, d, y, yaw, floors, style, wallsH, roofH, sign, balcony, lights })),
+    snowmen,
     update(t, dt, speed) {
       if (sails) sails.rotation.z -= dt * (0.4 + speed * 0.8);
       if (walkers) walkers.update(t);
@@ -906,4 +989,40 @@ function worldUV(g, k, grain = false) {
     }
   }
   g.userData.uv = true;
+}
+
+/**
+ * Snow lying on the roofs in drifts: thin just after a shake (the flakes
+ * are all in the air), building up to about half the roof as they settle
+ * (uSnow), so the tiles' colours still show; the steepest faces stay bare.
+ */
+function roofDrifts(m) {
+  const base = m.onBeforeCompile;
+  m.onBeforeCompile = (shader, r) => {
+    base(shader, r);
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', '#include <common>\nvarying vec3 vRoofP;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvRoofP = position;');
+    shader.fragmentShader = shader.fragmentShader
+      .replace(
+        '#include <common>',
+        `#include <common>
+        varying vec3 vRoofP;
+        float rdHash(vec2 p) { vec3 p3 = fract(vec3(p.xyx) * 0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
+        float rdNoise(vec2 p) { vec2 i = floor(p), f = fract(p); vec2 u = f * f * (3.0 - 2.0 * f); return mix(mix(rdHash(i), rdHash(i + vec2(1, 0)), u.x), mix(rdHash(i + vec2(0, 1)), rdHash(i + vec2(1, 1)), u.x), u.y); }`,
+      )
+      .replace(
+        '#include <color_fragment>',
+        `#include <color_fragment>
+        {
+          float n = rdNoise(vRoofP.xz * 0.55 + vRoofP.y * 0.4) * 0.7 + rdNoise(vRoofP.xz * 2.3) * 0.3;
+          // uSnow runs ~0.35 (just shaken, the flakes all in the air) to ~0.9 (all settled);
+          // patches with crisp edges, like snow half melted off a roof
+          float level = 0.72 - (uSnow - 0.35) * 0.55;
+          float cover = smoothstep(level - 0.03, level + 0.03, n) * smoothstep(0.3, 0.55, vUp);
+          diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.93, 0.96, 1.0), cover);
+        }`,
+      );
+  };
+  m.customProgramCacheKey = () => 'town:roof-drifts';
 }

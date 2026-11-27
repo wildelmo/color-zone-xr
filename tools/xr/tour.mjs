@@ -88,8 +88,23 @@ const views = await p.evaluate(async () => {
     const h = picks[0];
     const nx = Math.sin(h.yaw), nz = Math.cos(h.yaw);
     const fx = h.x + nx * (h.d / 2), fz = h.z + nz * (h.d / 2);
-    v.push({ name: 'door', at: w(fx + nx * 3, h.y + 3.2, fz + nz * 3), look: w(fx, h.y + 1.3, fz) });
+    v.push({ name: 'door', at: w(fx + nx * 2.0, h.y + 2.7, fz + nz * 2.0), look: w(fx, h.y + 1.2, fz) });
     v.push({ name: 'eaves', at: w(fx + nx * 2.6, h.y + h.wallsH + 1.6, fz + nz * 2.6), look: w(fx, h.y + h.wallsH, fz) });
+  }
+  // a balcony, a shop sign, string lights and a snowman, up close
+  const find = (k) => houses.find((h) => h[k] && clear(h));
+  for (const k of ['balcony', 'sign', 'lights']) {
+    const h = find(k);
+    if (h) v.push({ name: k, ...frontView(h, k === 'lights' ? 6 : 3.5, k === 'lights' ? 5 : 3) });
+  }
+  const sm = a.debug.snowmen[0];
+  if (sm) {
+    // from outside, over the wall, as you'd lean in from the walkway
+    const l = Math.hypot(sm[0], sm[2]);
+    const ox = sm[0] / l, oz = sm[2] / l;
+    v.push({ name: 'snowman', at: w(sm[0] + ox * 6, sm[1] + 7, sm[2] + oz * 6), look: w(sm[0], sm[1] + 0.9, sm[2]) });
+    v.push({ name: 'snowman-close', at: w(sm[0] + ox * 1.6 + oz * 1.2, sm[1] + 1.9, sm[2] + oz * 1.6 - ox * 1.2), look: w(sm[0], sm[1] + 0.9, sm[2]) });
+    v.push({ name: 'snowman-2', at: w(a.debug.snowmen[1][0] * 1.2, a.debug.snowmen[1][1] + 7, a.debug.snowmen[1][2] * 1.2), look: w(a.debug.snowmen[1][0], a.debug.snowmen[1][1] + 0.9, a.debug.snowmen[1][2]) });
   }
   // down the lower ring street
   const hill = T.hill;

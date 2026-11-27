@@ -23,6 +23,7 @@ const DOOR = ['#5a3420', '#2f4a5a', '#6a2a22', '#3d5a3a'];
 export function makeDetailer(bag, rnd, { hero = true } = {}) {
   const lamps = [];
   const chimneys = [];
+  const fairy = []; // { p, color } little string lights along some eaves
 
   /** a box from its size, placed by the frame m then a local offset */
   const box = (m, w, h, d, x, y, z, key, color, attrs, rx = 0, ry = 0, rz = 0) => bag.add(new THREE.BoxGeometry(w, h, d), m.clone().multiply(mat(x, y, z, rx, ry, rz)), key, color, attrs);
@@ -31,7 +32,7 @@ export function makeDetailer(bag, rnd, { hero = true } = {}) {
    * Detail for one wall bay. f is the bay's frame: origin at the bay's
    * bottom-left on the wall face, +x along the wall, +y up, +z out of it.
    */
-  function bay(f, len, h, style, kind, house, attrs, back = false) {
+  function bay(f, len, h, style, kind, house, attrs, back = false, where = {}) {
     if (!hero) return;
     const trim = TRIM[style];
     const out = 0.035;
@@ -42,10 +43,12 @@ export function makeDetailer(bag, rnd, { hero = true } = {}) {
       const top = h * (1 - 64 / S);
       const cx = len / 2, cy = top - wh / 2;
       const fw = 0.07;
-      // frame
-      box(f, ww + 2 * fw, fw, 0.07, cx, top + fw / 2, out, 'wood', trim, attrs);
-      box(f, fw, wh, 0.07, cx - ww / 2 - fw / 2, cy, out, 'wood', trim, attrs);
-      box(f, fw, wh, 0.07, cx + ww / 2 + fw / 2, cy, out, 'wood', trim, attrs);
+      // a deep frame, with a dark reveal inside it so the window looks set in
+      box(f, ww + 2 * fw, fw, 0.13, cx, top + fw / 2, 0.06, 'wood', trim, attrs);
+      box(f, fw, wh, 0.13, cx - ww / 2 - fw / 2, cy, 0.06, 'wood', trim, attrs);
+      box(f, fw, wh, 0.13, cx + ww / 2 + fw / 2, cy, 0.06, 'wood', trim, attrs);
+      box(f, ww, 0.03, 0.1, cx, top - 0.015, 0.05, 'wood', '#2a2018', attrs);
+      for (const s of [-1, 1]) box(f, 0.03, wh, 0.1, cx + s * (ww / 2 - 0.015), cy, 0.05, 'wood', '#2a2018', attrs);
       // mullion cross
       box(f, 0.035, wh, 0.03, cx, cy, out - 0.01, 'wood', trim, attrs);
       box(f, ww, 0.035, 0.03, cx, top - wh * 0.45, out - 0.01, 'wood', trim, attrs);
@@ -62,10 +65,23 @@ export function makeDetailer(bag, rnd, { hero = true } = {}) {
           box(sh, sw, wh + 0.04, 0.035, (s * sw) / 2, 0, 0, 'wood', house.shutter, attrs);
         }
       }
-      // a flower box of winter greens now and then
-      if (!back && rnd() < 0.35) {
+      // a balcony under the middle front window of the first floor
+      if (where.balcony) {
+        const bw = ww + 0.9, bd = 0.62, by = top - wh - 0.1;
+        box(f, bw, 0.08, bd, cx, by, bd / 2, 'wood', '#5a3a24', attrs);
+        for (const s of [-1, 1]) box(f, 0.06, 0.06, bd * 1.3, cx + s * (bw / 2 - 0.1), by - 0.28, bd * 0.42, 'wood', '#3a2618', attrs, 0.78);
+        const n = Math.round(bw / 0.16);
+        for (let k = 0; k <= n; k++) box(f, 0.035, 0.42, 0.035, cx - bw / 2 + 0.04 + (k * (bw - 0.08)) / n, by + 0.25, bd - 0.04, 'wood', '#3a2618', attrs);
+        for (const s of [-1, 1]) for (let k = 1; k < 4; k++) box(f, 0.035, 0.42, 0.035, cx + s * (bw / 2 - 0.04), by + 0.25, (k * bd) / 4, 'wood', '#3a2618', attrs);
+        box(f, bw, 0.05, 0.07, cx, by + 0.48, bd - 0.04, 'wood', '#5a3a24', attrs);
+        for (const s of [-1, 1]) box(f, 0.07, 0.05, bd, cx + s * (bw / 2 - 0.04), by + 0.48, bd / 2, 'wood', '#5a3a24', attrs);
+        // a garland along its rail
+        garland(f, [cx - bw / 2 + 0.05, by + 0.5, bd], [cx + bw / 2 - 0.05, by + 0.5, bd], 0.14, attrs);
+      } else if (!back && rnd() < 0.35) {
+        // a flower box of winter greens now and then
         box(f, ww + 0.1, 0.2, 0.2, cx, top - wh - 0.2, 0.15, 'wood', '#5a3a24', attrs);
         box(f, ww - 0.02, 0.1, 0.16, cx, top - wh - 0.06, 0.15, 'wood', '#2f5a38', attrs);
+        for (let k = 0; k < 5; k++) bag.add(new THREE.IcosahedronGeometry(0.035, 0), f.clone().multiply(mat(cx - ww / 2 + 0.1 + (k * (ww - 0.2)) / 4, top - wh + 0.0, 0.15 + (rnd() - 0.5) * 0.08)), 'wood', '#a8202a', attrs);
       }
     } else if (kind === 0) {
       const dw = (len * 84) / S, dh = (h * 150) / S;
@@ -82,6 +98,16 @@ export function makeDetailer(bag, rnd, { hero = true } = {}) {
       const hood = f.clone().multiply(mat(cx, base + dh + 0.32, 0.32));
       for (const s of [-1, 1]) box(hood, dw * 0.62 + 0.25, 0.06, 0.72, s * (dw * 0.3 + 0.08), 0, 0, 'roof', house.roof, attrs, 0, 0, -s * 0.55);
       for (const s of [-1, 1]) box(f, 0.05, 0.05, 0.5, cx + s * (dw / 2 + 0.2), base + dh + 0.05, 0.25, 'wood', '#3a2618', attrs, -0.7);
+      // a wreath on the door, and a garland swagged over it
+      if (rnd() < 0.7) {
+        bag.add(new THREE.TorusGeometry(0.15, 0.05, 6, 14), f.clone().multiply(mat(cx, base + dh * 0.62, 0.08)), 'wood', '#24502e', attrs);
+        for (let k = 0; k < 6; k++) {
+          const a = (k / 6) * Math.PI * 2;
+          bag.add(new THREE.IcosahedronGeometry(0.022, 0), f.clone().multiply(mat(cx + Math.cos(a) * 0.15, base + dh * 0.62 + Math.sin(a) * 0.15, 0.12)), 'wood', '#b8202a', attrs);
+        }
+        box(f, 0.12, 0.07, 0.03, cx, base + dh * 0.62 + 0.17, 0.12, 'wood', '#b8202a', attrs);
+      }
+      if (rnd() < 0.5) garland(f, [cx - dw / 2 - 0.12, base + dh + 0.05, 0.14], [cx + dw / 2 + 0.12, base + dh + 0.05, 0.14], 0.16, attrs);
       // a lamp beside the door
       const lx = cx + (rnd() < 0.5 ? -1 : 1) * (dw / 2 + 0.38);
       box(f, 0.05, 0.05, 0.22, lx, base + dh * 0.8, 0.11, 'wood', '#2a2420', attrs);
@@ -91,6 +117,18 @@ export function makeDetailer(bag, rnd, { hero = true } = {}) {
       // a round window: a ring of trim
       const ring = new THREE.TorusGeometry(0.34 * (len / 2.3), 0.05, 4, hero ? 12 : 8);
       bag.add(ring, f.clone().multiply(mat(len / 2, h * (1 - 110 / S), out)), 'wood', trim, attrs);
+    }
+  }
+
+  /** an evergreen garland swagged between two points (frame f), with berries */
+  function garland(f, a, b, sag, attrs) {
+    const n = Math.max(6, Math.round(Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2]) / 0.07));
+    for (let k = 0; k <= n; k++) {
+      const t = k / n;
+      const y = a[1] + (b[1] - a[1]) * t - Math.sin(t * Math.PI) * sag;
+      const x = a[0] + (b[0] - a[0]) * t, z = a[2] + (b[2] - a[2]) * t;
+      bag.add(new THREE.IcosahedronGeometry(0.05 + rnd() * 0.015, 0), f.clone().multiply(mat(x, y, z, rnd() * 3, rnd() * 3, 0)), 'wood', rnd() < 0.5 ? '#24502e' : '#1d4428', attrs);
+      if (k % 3 === 1) bag.add(new THREE.IcosahedronGeometry(0.02, 0), f.clone().multiply(mat(x, y - 0.04, z + 0.04)), 'wood', '#c0202a', attrs);
     }
   }
 
@@ -136,6 +174,17 @@ export function makeDetailer(bag, rnd, { hero = true } = {}) {
       const ez = sgn * (run - 0.04), ey = -drop + 0.24;
       const lip = new THREE.CylinderGeometry(0.17, 0.17, len + 2 * ohg + 0.06, 7, 1).rotateZ(Math.PI / 2);
       bag.add(lip, fr.clone().multiply(mat(0, ey, ez, 0, 0, 0, 1, 0.8, 1)), 'snow', '#f4f8ff', attrs);
+      // string lights along the street-side eave of some houses
+      if (house.lights && sgn === 1) {
+        const m = Math.floor((len + 2 * ohg) / 0.32);
+        const pal = house.lights;
+        for (let k = 0; k <= m; k++) {
+          const t = k / m;
+          const x = -len / 2 - ohg + 0.08 + t * (len + 2 * ohg - 0.16);
+          const sagY = -Math.abs(Math.sin(t * Math.PI * Math.max(2, Math.round(m / 4)))) * 0.1;
+          fairy.push({ p: new THREE.Vector3(x, -drop - 0.06 + sagY, ez + sgn * 0.06).applyMatrix4(fr), color: pal[k % pal.length] });
+        }
+      }
       // icicles
       const n = Math.floor((len + 2 * ohg) / 0.28);
       for (let k = 0; k < n; k++) {
@@ -187,13 +236,21 @@ export function makeDetailer(bag, rnd, { hero = true } = {}) {
     chimneys.push(p.clone());
   }
 
-  return { bay, timbers, eaves, dormer, chimney, lamps, chimneys, box };
+  return { bay, timbers, eaves, dormer, chimney, garland, lamps, chimneys, fairy, box };
 }
+
+const LIGHTS = [
+  ['#ff4a3a', '#3ad06a', '#ffcf40', '#4a8aff'],
+  ['#ffd890'],
+  ['#ff4a3a', '#ffd890'],
+];
 
 export function houseLook(rnd) {
   return {
     shutter: SHUTTER[Math.floor(rnd() * SHUTTER.length)],
     door: DOOR[Math.floor(rnd() * DOOR.length)],
     barge: ['#3a2618', '#4a2c1a', '#2a2420', '#5a3a24'][Math.floor(rnd() * 4)],
+    lights: rnd() < 0.35 ? LIGHTS[Math.floor(rnd() * LIGHTS.length)] : null,
+    balcony: rnd() < 0.3,
   };
 }

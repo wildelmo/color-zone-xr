@@ -89,14 +89,15 @@ export function groundMaterial(kit, uniforms) {
           float sett = 1.0 - smoothstep(-0.04, 0.015, sd);
           // snow drifts in from the edges of the street, and dusts some setts
           float drift = smoothstep(0.55, 0.95, st) * (1.0 - 0.6 * smoothstep(0.45, 0.8, gNoise(p * 0.9)));
-          // shaking the globe (uSnow rising) buries the streets again
-          float bare = sett * drift * step(0.18, rnd) * (1.0 - smoothstep(0.45, 0.95, uSnow));
+          // the streets are swept; settled snow (uSnow ~0.9) only dusts some setts
+          float dust = 0.35 * smoothstep(0.6, 0.95, uSnow);
+          float bare = sett * drift * step(0.18 + dust, rnd);
           vec3 stone = mix(vec3(0.26, 0.25, 0.25), vec3(0.44, 0.40, 0.36), rnd) * (0.82 + 0.3 * gNoise(p * 14.0));
           // the joints: packed, greyish snow
           vec3 joint = vec3(0.72, 0.74, 0.78);
           vec3 snowCol = vec3(0.92, 0.95, 1.0) * (0.92 + 0.08 * gNoise(p * 1.7));
           vec3 ground = mix(diffuseColor.rgb, snowCol, snowy * flat_);
-          float inStreet = drift * step(0.18, rnd) * (1.0 - smoothstep(0.45, 0.95, uSnow));
+          float inStreet = drift * step(0.18 + dust, rnd);
           diffuseColor.rgb = mix(ground, mix(joint, stone, sett), inStreet);
           gH += inStreet * sett * (0.5 + 0.5 * smoothstep(0.0, -0.1, sd));
           // soft drifts across open snow
