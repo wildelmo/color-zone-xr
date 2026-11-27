@@ -104,12 +104,19 @@ export function groundMaterial(kit, uniforms) {
           gH += (1.0 - bare) * snowy * flat_ * (gNoise(p * 1.3) * 0.6 + gNoise(p * 4.1) * 0.25);
           // cliffs: layered, rough rock; snow only clings to ledges
           float steep = 1.0 - smoothstep(0.5, 0.78, vUp);
-          float strata = gNoise(vec2(vIsle.y * 2.2, (vIsle.x + vIsle.z) * 0.15));
-          float grain = gNoise(vec2(vIsle.x + vIsle.z, vIsle.y) * 3.0);
-          vec3 rock = vec3(0.30, 0.32, 0.38) * (0.75 + 0.35 * strata) * (0.85 + 0.25 * grain);
-          float cling = smoothstep(0.22, 0.42, vUp) * smoothstep(0.55, 0.75, gNoise(vIsle.xz * 1.6 + vIsle.y));
+          // horizontal beds of rock, gently warped, a darker seam between each
+          float warp = gNoise(vec2(vIsle.x + vIsle.z, vIsle.x - vIsle.z) * 0.12) * 3.0;
+          float bed = fract(vIsle.y * 0.9 + warp);
+          float seam = smoothstep(0.0, 0.08, bed) * (1.0 - smoothstep(0.9, 1.0, bed));
+          float tone = gHash(vec2(floor(vIsle.y * 0.9 + warp), 3.0));
+          float grain = gNoise(vec2(vIsle.x + vIsle.z, vIsle.y) * 4.0);
+          vec3 rock = mix(vec3(0.24, 0.26, 0.31), vec3(0.40, 0.42, 0.47), tone) * (0.55 + 0.45 * seam) * (0.88 + 0.2 * grain);
+          // snow lies only on the upper faces of the beds, the ledges
+          float cling = smoothstep(0.28, 0.45, vUp) * smoothstep(0.55, 0.85, bed);
           diffuseColor.rgb = mix(diffuseColor.rgb, mix(rock, snowCol, cling), steep * snowy);
-          gH += steep * (strata * 0.7 + grain * 0.35);
+          // and the rock under the island is bare and dark
+          diffuseColor.rgb = mix(diffuseColor.rgb, rock * 0.8, (1.0 - smoothstep(-0.3, 0.1, vUp)));
+          gH += steep * (seam * 0.8 + grain * 0.25);
           // glints in the snow that come and go as you move your head
           vec2 g = floor(p * 9.0 + floor(vViewPosition.xy * 6.0) * 0.37);
           gSpark = step(0.993, gHash(g)) * snowy * flat_ * (1.0 - bare);

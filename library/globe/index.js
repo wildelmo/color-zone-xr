@@ -96,6 +96,7 @@ export async function createGlobe(ctx, { lod = 'hero' } = {}) {
   await ctx.step();
   const water = buildWater(kit, { lod });
   island.add(water.group);
+  if (water.foam) island.add(water.foam.mesh);
   root.add(water.mist.mesh);
   // lanterns: warm glows (island space)
   const lights = new BulbString({ radius: 0.12, glow: 1.4, detail: hero ? 1 : 0 });

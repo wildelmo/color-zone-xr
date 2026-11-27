@@ -30,6 +30,8 @@ await run({ cmd: 'enter' });
 await run({ cmd: 'aim', hand: 'right', at: 'button:life' });
 await run({ cmd: 'press', hand: 'right', button: 'trigger' });
 await p.waitForFunction(() => !window.__cc.stage.tween && window.__cc.stage.mode === 'life', null, { timeout: 90000 });
+// the control panel follows you about; keep it out of the pictures
+await p.evaluate(() => (window.__cc.panel.group.visible = false));
 // hands down out of the way
 await run({ cmd: 'aim', hand: 'right', at: [0, -5, 9] });
 await run({ cmd: 'aim', hand: 'left', at: [0, -5, 9] });
@@ -53,7 +55,9 @@ const views = await p.evaluate(async () => {
     { name: 'lean-b', at: ring(gate + 2.2, 2.75, 1.3), look: ring(gate + 2.2, 1.5, c[1] + 0.05) },
     { name: 'over', at: ring(gate + 0.5, 3.3, 2.1), look: [0, c[1], 0] },
     // crouching at the rail, looking up under the island
-    { name: 'under', at: ring(gate - 0.4, 3.2, 0.45), look: [0, c[1] - 0.9, 0] },
+    { name: 'under', at: ring(gate - 0.42, 3.55, 0.45), look: [0, c[1] - 0.9, 0] },
+    // a waterfall's lip, close
+    { name: 'falls', at: ring(T.ravineA, 3.0, 1.35), look: ring(T.ravineA, 2.55, c[1] + 0.02) },
   ];
   // in front of a few houses of different styles (their fronts face the
   // street), only where nothing stands in the way of the camera
@@ -126,6 +130,12 @@ const views = await p.evaluate(async () => {
     const ol = Math.hypot(fp.x, fp.z);
     v.push({ name: `folk-${i}`, at: w(fp.x + (fp.x / ol) * 2.2, fp.y + 2.4, fp.z + (fp.z / ol) * 2.2), look: w(fp.x, fp.y + 0.8, fp.z) });
   }
+  // both dragons, close, wherever they are now
+  a.debug.dragons.forEach((d, i) => {
+    const p = a.root.localToWorld(d.pos.clone());
+    const ol = Math.hypot(p.x, p.z) || 1;
+    v.push({ name: `dragon-${i}`, at: [p.x + (p.x / ol) * 0.45, p.y + 0.12, p.z + (p.z / ol) * 0.45], look: p.toArray() });
+  });
   // down the lower ring street
   const hill = T.hill;
   const sa = gate - 0.6;
