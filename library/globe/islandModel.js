@@ -31,9 +31,10 @@ function islandRaw(x, y, z) {
 function islandColor(x, y, z) {
   const top = topHeight(x, z);
   const onTop = smooth01(top - 0.9, top - 0.25, y);
-  // rock: blue-grey with darker strata and frosty speckles
+  // rock: blue-grey with darker strata and frosty patches (a soft ramp, not a
+  // threshold: a step from one vertex to the next shows as speckle)
   const strata = 0.82 + 0.18 * Math.sin(y * 1.7 + noise3(x * 0.2, y * 0.2, z * 0.2) * 4);
-  const speck = noise3(x * 2.1, y * 2.1, z * 2.1) > 0.78 ? 1.25 : 1;
+  const speck = 1 + 0.25 * smooth01(0.7, 0.86, noise3(x * 2.1, y * 2.1, z * 2.1));
   const under = smooth01(-2, -12, y);
   let rr = 0.34 * strata * speck * (1 - under * 0.35);
   let gg = 0.36 * strata * speck * (1 - under * 0.32);
@@ -63,8 +64,12 @@ function floorRaw(x, y, z) {
   return smax(smax(dTop, dIn, 0.8), G.floorY - 4 - y, 0.5);
 }
 function floorColor(x, y, z) {
-  const rock = noise3(x * 0.3, y * 0.3, z * 0.3) > 0.68;
-  return rock ? [0.3, 0.32, 0.38] : [0.9, 0.93, 0.98];
+  // snow, with rock showing through softly where it lies thin: a smooth blend at
+  // a scale well above the mesh's cells (1.2 in the hero, 5.5 on the shelf),
+  // never a hard threshold, which drew grey blotches with stepped edges
+  const n = 0.75 * noise3(x * 0.3, y * 0.3, z * 0.3) + 0.25 * noise3(x * 0.11, 7, z * 0.11);
+  const t = 0.55 * smooth01(0.56, 0.8, n);
+  return [0.9 + (0.36 - 0.9) * t, 0.93 + (0.38 - 0.93) * t, 0.98 + (0.44 - 0.98) * t];
 }
 
 // ------------------------------------------------------------------- base

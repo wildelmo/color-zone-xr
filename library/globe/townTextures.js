@@ -2,14 +2,30 @@ import { makeCanvas, canvasTexture } from '../core/textures.js';
 import { mulberry32 } from '../core/random.js';
 
 /**
- * Painted façade atlas for the town: 4 styles (columns) x 4 tile kinds (rows).
- * Each tile is one bay of one storey (~2.2 m x 3 m). A matching emissive
- * atlas lights only the window panes, so windows glow at night.
+ * Painted façade atlas for the town: 4 styles (columns) x 4 tile kinds
+ * (rows), plus a fifth row of carpentry. Each façade tile is one bay of one
+ * storey (~2.3 m x 3 m). A matching emissive atlas lights only the window
+ * panes, so windows glow at night, and a normal atlas carries the relief the
+ * carved trim gives up close (deep window frames, sills, mullions, beams
+ * standing proud, stone courses, door surrounds), so the fronts still catch
+ * the light like carved ones when the trim is too small to draw.
  *
  * rows (top to bottom in the canvas): 0 door bay, 1 ground window,
- * 2 upper window, 3 plain / small window
+ * 2 upper window, 3 plain / small window, 4 carpentry: a plank door with
+ * iron straps, a louvred shutter, plain wood (light grey, tinted by vertex
+ * colour where details.js builds doors and shutters from it)
+ *
+ * The relief is placed where details.js builds the matching trim, for a
+ * nominal bay (BAY): a bay narrower or wider than that puts the fixed-size
+ * members (frames 0.07 wide, posts 0.13) a pixel or two off.
  */
-export const ATLAS = { cols: 4, rows: 4 };
+export const ATLAS = { cols: 4, rows: 5 };
+
+const S = 256;
+/** the bay the relief is drawn for: its length, and its height by row */
+const BAY = { len: 2.3, h: [3.1, 3.1, 2.8, 2.8] };
+const px = (m) => (m / BAY.len) * S; // metres along the wall -> pixels
+const py = (m, row) => (m / BAY.h[row]) * S; // metres up the wall -> pixels
 
 const STYLES = [
   { wall: '#e9dcc0', beam: '#4a2c1a', trim: '#4a2c1a', timber: true }, // cream timber-frame
@@ -17,6 +33,14 @@ const STYLES = [
   { wall: '#d9a59a', beam: '#f1e6d6', trim: '#f1e6d6' }, // rose plaster
   { wall: '#a9b7c4', beam: '#3c2a1e', trim: '#3c2a1e', timber: true }, // blue-grey timber
 ];
+
+// relief heights (0..1, the wall at 0.42); the trim's depth out of the wall
+// sets the order: sills 0.2 m, frames 0.125, lintels 0.1, beams 0.06
+const R = { wall: 0.42, joint: 0.33, glass: 0.16, frame: 0.8, sill: 0.86, lintel: 0.72, mullion: 0.6, beam: 0.64, band: 0.5, surround: 0.78, door: 0.24, step: 0.62 };
+const grey = (v) => {
+  const g = Math.max(0, Math.min(255, Math.round(v * 255)));
+  return `rgb(${g},${g},${g})`;
+};
 
 function windowShape(ctx, x, y, w, h, arch) {
   ctx.beginPath();
@@ -29,54 +53,148 @@ function windowShape(ctx, x, y, w, h, arch) {
   ctx.closePath();
 }
 
-function drawWindow(ctx, emis, x, y, w, h, st, arch, rnd) {
-  // frame
+/** the members of a timber frame (as details.js timbers() builds them), in tile pixels */
+function timberShapes(x0, y0, row) {
+  const post = px(0.065); // half of a 0.13 post, either side of the bay's edge
+  const top = py(0.11, row), bottom = py(0.16, row);
+  const rects = [
+    [x0, y0, post, S],
+    [x0 + S - post, y0, post, S],
+    [x0, y0, S, top],
+    [x0, y0 + S - bottom, S, bottom],
+  ];
+  // braces on upper storeys, from the sill beam up to the posts either side of the window
+  const braces = [];
+  if (row >= 2) {
+    const yb = y0 + S - bottom, rise = 0.45 * S, run = 0.22 * S;
+    braces.push([x0 + post, yb, x0 + post + run, yb - rise], [x0 + S - post, yb, x0 + S - post - run, yb - rise]);
+  }
+  return { rects, braces, width: px(0.1) };
+}
+
+/**
+ * One window (rows 1, 2) as details.js frames it: x, y, w, h are the pane
+ * (the painted glass), the frame 0.07 round it with its sides reaching down
+ * to the sill, a sill 0.3 wider than the pane, and a stone lintel over it on
+ * the stone style.
+ */
+function windowParts(x, y, w, h, row) {
+  const fx = px(0.07), fy = py(0.07, row);
+  const sillTop = y + h + py(0.025, row);
+  return {
+    frame: [x - fx, y - fy, w + 2 * fx, sillTop - (y - fy)],
+    sill: [x + w / 2 - (w + px(0.3)) / 2, sillTop, w + px(0.3), py(0.07, row)],
+    lintel: [x + w / 2 - (w + px(0.34)) / 2, y - py(0.21, row), w + px(0.34), py(0.16, row)],
+    mullions: [
+      [x + w / 2 - 3, y, 6, h],
+      [x, y + h * 0.45, w, 5],
+    ],
+  };
+}
+
+function drawWindow(ctx, emis, hgt, x, y, w, h, st, arch, rnd, row) {
+  const parts = windowParts(x, y, w, h, row);
+  // a stone lintel over the stone style's windows
+  if (st.stone) {
+    ctx.fillStyle = '#9a948a';
+    ctx.fillRect(...parts.lintel);
+    hgt.fillStyle = grey(R.lintel);
+    hgt.fillRect(...parts.lintel);
+  }
+  // frame (square, as built; an arched pane sits in it under a stone tympanum)
   ctx.fillStyle = st.trim;
-  windowShape(ctx, x - 6, y - 6, w + 12, h + 12, arch);
-  ctx.fill();
-  // glass (dark by day)
+  ctx.fillRect(...parts.frame);
+  hgt.fillStyle = grey(R.frame);
+  hgt.fillRect(...parts.frame);
+  hgt.fillStyle = grey(R.wall);
+  hgt.fillRect(x, y, w, h);
+  // glass (dark by day), set in behind the frame
   ctx.fillStyle = '#2a3442';
   windowShape(ctx, x, y, w, h, arch);
   ctx.fill();
+  hgt.fillStyle = grey(R.glass);
+  windowShape(hgt, x, y, w, h, arch);
+  hgt.fill();
   // panes glow at night
   const warm = rnd() < 0.15 ? '#ffd9a0' : '#ffbf66';
   emis.fillStyle = warm;
   windowShape(emis, x, y, w, h, arch);
   emis.fill();
-  // mullions
+  // the reveal: the frame's inner faces darken the edge of the pane
   for (const c of [ctx, emis]) {
-    c.fillStyle = c === ctx ? st.trim : '#000';
-    c.fillRect(x + w / 2 - 3, y, 6, h);
-    c.fillRect(x, y + h * 0.45, w, 5);
+    c.save();
+    windowShape(c, x, y, w, h, arch);
+    c.clip();
+    c.strokeStyle = c === ctx ? 'rgba(12,10,8,0.6)' : '#000';
+    c.lineWidth = 7;
+    windowShape(c, x, y, w, h, arch);
+    c.stroke();
+    c.restore();
   }
-  // shutters and a sill with a flower box (day only)
+  // mullions
+  for (const c of [ctx, emis, hgt]) {
+    c.fillStyle = c === ctx ? st.trim : c === emis ? '#000' : grey(R.mullion);
+    for (const m of parts.mullions) c.fillRect(...m);
+  }
+  // shutters (day only), louvred
   ctx.fillStyle = rnd() < 0.5 ? '#3d5a3a' : '#6a2a22';
-  ctx.fillRect(x - 6 - w * 0.42, y - 2, w * 0.4, h + 4);
-  ctx.fillRect(x + w + 6 + 2, y - 2, w * 0.4, h + 4);
-  ctx.fillStyle = st.trim;
-  ctx.fillRect(x - 10, y + h + 6, w + 20, 8);
+  const sw = w * 0.42;
+  const shutters = [
+    [x - px(0.07) - sw, y - 2, sw, h + 4],
+    [x + w + px(0.07), y - 2, sw, h + 4],
+  ];
+  for (const s of shutters) {
+    ctx.fillRect(...s);
+    louvres(ctx, hgt, ...s, 0.5, 'rgba(0,0,0,0.22)');
+  }
+  // the sill, with a little snow on it now and then
+  ctx.fillStyle = st.stone ? '#a8a196' : st.trim;
+  ctx.fillRect(...parts.sill);
+  hgt.fillStyle = grey(R.sill);
+  hgt.fillRect(...parts.sill);
   if (rnd() < 0.6) {
-    ctx.fillStyle = '#e8eef4'; // a little snow on the box
-    ctx.fillRect(x - 6, y + h + 2, w + 12, 5);
+    ctx.fillStyle = '#e8eef4';
+    ctx.fillRect(parts.sill[0] + 2, parts.sill[1] - 1, parts.sill[2] - 4, 3);
   }
 }
 
-function tile(ctx, emis, col, row, rnd) {
-  const S = 256;
+/** horizontal louvre slats over a rectangle: shading in ctx, a sawtooth in the relief */
+function louvres(ctx, hgt, x, y, w, h, base, shade, frame = 0) {
+  const n = Math.max(3, Math.round((h - 2 * frame) / 9));
+  const sh = (h - 2 * frame) / n;
+  if (frame) {
+    hgt.fillStyle = grey(base + 0.2);
+    hgt.fillRect(x, y, w, h);
+  }
+  for (let k = 0; k < n; k++) {
+    const sy = y + frame + k * sh;
+    // each slat tilts out toward its foot, so its face catches the light from above
+    const g = hgt.createLinearGradient(0, sy, 0, sy + sh);
+    g.addColorStop(0, grey(base - 0.08));
+    g.addColorStop(0.85, grey(base + 0.1));
+    g.addColorStop(1, grey(base - 0.08));
+    hgt.fillStyle = g;
+    hgt.fillRect(x + frame, sy, w - 2 * frame, sh);
+    ctx.fillStyle = shade;
+    ctx.fillRect(x + frame, sy + sh * 0.8, w - 2 * frame, Math.max(1, sh * 0.2));
+  }
+}
+
+function tile(ctx, emis, hgt, col, row, rnd, hrnd) {
   const x0 = col * S, y0 = row * S;
   const st = STYLES[col];
-  ctx.save();
-  ctx.beginPath();
-  ctx.rect(x0, y0, S, S);
-  ctx.clip();
-  emis.save();
-  emis.beginPath();
-  emis.rect(x0, y0, S, S);
-  emis.clip();
+  for (const c of [ctx, emis, hgt]) {
+    c.save();
+    c.beginPath();
+    c.rect(x0, y0, S, S);
+    c.clip();
+  }
   emis.fillStyle = '#000';
   emis.fillRect(x0, y0, S, S);
   ctx.fillStyle = st.wall;
   ctx.fillRect(x0, y0, S, S);
+  hgt.fillStyle = grey(st.stone ? R.joint : R.wall);
+  hgt.fillRect(x0, y0, S, S);
   // plaster mottling / stone courses
   if (st.stone) {
     for (let yy = 0; yy < S; yy += 26) {
@@ -84,6 +202,9 @@ function tile(ctx, emis, col, row, rnd) {
       for (let xx = -60; xx < S; xx += 60) {
         ctx.fillStyle = `rgba(${rnd() < 0.5 ? '255,255,255' : '40,30,20'},${0.04 + rnd() * 0.08})`;
         ctx.fillRect(x0 + xx + off, y0 + yy, 58, 24);
+        // each block a touch proud of the mortar, some more than others
+        hgt.fillStyle = grey(R.wall + 0.02 + (hrnd() - 0.5) * 0.05);
+        hgt.fillRect(x0 + xx + off, y0 + yy, 58, 24);
       }
       ctx.fillStyle = 'rgba(60,50,40,0.35)';
       ctx.fillRect(x0, y0 + yy, S, 2);
@@ -95,41 +216,68 @@ function tile(ctx, emis, col, row, rnd) {
       ctx.arc(x0 + rnd() * S, y0 + rnd() * S, 6 + rnd() * 18, 0, Math.PI * 2);
       ctx.fill();
     }
+    // the plaster is hand-laid: soft swells and hollows
+    for (let i = 0; i < 40; i++) {
+      const c = hrnd() < 0.5 ? '255,255,255' : '0,0,0', a = 0.04 + hrnd() * 0.05;
+      const x = x0 + hrnd() * S, y = y0 + hrnd() * S, r = 8 + hrnd() * 20;
+      const g = hgt.createRadialGradient(x, y, 0, x, y, r);
+      g.addColorStop(0, `rgba(${c},${a})`);
+      g.addColorStop(1, `rgba(${c},0)`);
+      hgt.fillStyle = g;
+      hgt.fillRect(x - r, y - r, 2 * r, 2 * r);
+    }
   }
-  // timber framing
+  // timber framing, where details.js puts the beams
   if (st.timber) {
-    ctx.fillStyle = st.beam;
-    ctx.fillRect(x0, y0, 14, S);
-    ctx.fillRect(x0 + S - 14, y0, 14, S);
-    ctx.fillRect(x0, y0 + S - 16, S, 16);
-    ctx.fillRect(x0, y0, S, 10);
-    if (row >= 2) {
-      ctx.save();
-      ctx.lineWidth = 12;
-      ctx.strokeStyle = st.beam;
-      ctx.beginPath();
-      ctx.moveTo(x0 + 14, y0 + S - 16);
-      ctx.lineTo(x0 + 70, y0 + 140);
-      ctx.moveTo(x0 + S - 14, y0 + S - 16);
-      ctx.lineTo(x0 + S - 70, y0 + 140);
-      ctx.stroke();
-      ctx.restore();
+    const t = timberShapes(x0, y0, row);
+    for (const [c, fill] of [[ctx, st.beam], [hgt, grey(R.beam)]]) {
+      c.fillStyle = fill;
+      for (const r of t.rects) c.fillRect(...r);
+      c.save();
+      c.lineWidth = t.width;
+      c.strokeStyle = fill;
+      c.beginPath();
+      for (const [ax, ay, bx, by] of t.braces) {
+        c.moveTo(ax, ay);
+        c.lineTo(bx, by);
+      }
+      c.stroke();
+      c.restore();
     }
   } else {
     ctx.fillStyle = st.trim;
     ctx.fillRect(x0, y0 + S - 10, S, 10);
+    hgt.fillStyle = grey(R.band);
+    hgt.fillRect(x0, y0 + S - 10, S, 10);
   }
   const arch = col === 1;
   if (row === 0) {
-    // door with a lantern-lit transom
+    // door with a lantern-lit transom, in a stone surround with a step (as details.js builds it)
     const dw = 84, dh = 150;
     const dx = x0 + (S - dw) / 2, dy = y0 + S - 16 - dh;
-    ctx.fillStyle = st.trim;
-    windowShape(ctx, dx - 8, dy - 8, dw + 16, dh + 8, true);
-    ctx.fill();
+    const pw = px(0.12);
+    const posts = [
+      [dx - pw, dy - py(0.05, 0), pw, dh + py(0.1, 0)],
+      [dx + dw, dy - py(0.05, 0), pw, dh + py(0.1, 0)],
+    ];
+    const lintel = [x0 + S / 2 - (dw + px(0.44)) / 2, dy - py(0.18, 0), dw + px(0.44), py(0.16, 0)];
+    const step = [x0 + S / 2 - (dw + px(0.5)) / 2, y0 + S - py(0.11, 0), dw + px(0.5), py(0.11, 0)];
+    ctx.fillStyle = '#a8a196';
+    for (const p of posts) ctx.fillRect(...p);
+    ctx.fillStyle = '#9a948a';
+    ctx.fillRect(...lintel);
+    ctx.fillStyle = '#8a847a';
+    ctx.fillRect(...step);
+    hgt.fillStyle = grey(R.surround);
+    for (const p of [...posts, lintel]) hgt.fillRect(...p);
+    hgt.fillStyle = grey(R.step);
+    hgt.fillRect(...step);
     ctx.fillStyle = ['#5a3420', '#2f4a5a', '#6a2a22', '#3d5a3a'][Math.floor(rnd() * 4)];
     windowShape(ctx, dx, dy, dw, dh, true);
     ctx.fill();
+    hgt.fillStyle = grey(R.door);
+    windowShape(hgt, dx, dy, dw, dh, true);
+    hgt.fill();
     ctx.fillStyle = 'rgba(0,0,0,0.25)';
     ctx.fillRect(dx + dw / 2 - 2, dy + 30, 4, dh - 30);
     ctx.fillStyle = '#d9a64c';
@@ -142,43 +290,230 @@ function tile(ctx, emis, col, row, rnd) {
     ctx.fillStyle = '#ffcc80';
     windowShape(ctx, dx + 10, dy + 6, dw - 20, 30, true);
     ctx.fill();
+    hgt.fillStyle = grey(R.glass);
+    windowShape(hgt, dx + 10, dy + 6, dw - 20, 30, true);
+    hgt.fill();
   } else if (row === 1 || row === 2) {
-    drawWindow(ctx, emis, x0 + 80, y0 + 64, 96, row === 1 ? 110 : 120, st, arch, rnd);
+    drawWindow(ctx, emis, hgt, x0 + 80, y0 + 64, 96, row === 1 ? 110 : 120, st, arch, rnd, row);
   } else {
-    // small round window
-    ctx.fillStyle = st.trim;
-    ctx.beginPath();
-    ctx.arc(x0 + S / 2, y0 + 110, 34, 0, Math.PI * 2);
-    ctx.fill();
+    // small round window in a ring of trim (details.js: a torus 0.34 m across a
+    // 2.3 m bay, which the tile squeezes into an ellipse)
+    const cx = x0 + S / 2, cy = y0 + 110;
+    const rx = px(0.34), ry = py(0.34, row);
+    for (const [c, fill] of [[ctx, st.trim], [hgt, grey(R.frame)]]) {
+      c.strokeStyle = fill;
+      c.lineWidth = px(0.1);
+      c.beginPath();
+      c.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
+      c.stroke();
+    }
     ctx.fillStyle = '#2a3442';
-    ctx.beginPath();
-    ctx.arc(x0 + S / 2, y0 + 110, 26, 0, Math.PI * 2);
-    ctx.fill();
+    hgt.fillStyle = grey(R.glass);
+    for (const c of [ctx, hgt]) {
+      c.beginPath();
+      c.arc(cx, cy, 26, 0, Math.PI * 2);
+      c.fill();
+    }
     emis.fillStyle = '#ffbf66';
     emis.beginPath();
-    emis.arc(x0 + S / 2, y0 + 110, 26, 0, Math.PI * 2);
+    emis.arc(cx, cy, 26, 0, Math.PI * 2);
     emis.fill();
   }
-  ctx.restore();
-  emis.restore();
+  for (const c of [ctx, emis, hgt]) c.restore();
 }
 
-export function facadeAtlas() {
-  const S = 256;
-  const c = makeCanvas(S * 4, S * 4);
-  const e = makeCanvas(S * 4, S * 4);
+/**
+ * The carpentry row (4): light grey, tinted by the vertex colour of the
+ * door or shutter built from it. Col 0 a door leaf of four planks with two
+ * iron straps, nails and a ring pull (maps onto a leaf ~0.75 x 1.6 m); col 1 a
+ * louvred shutter in its frame (~0.4 x 1.35 m); cols 2, 3 plain wood for the
+ * edges.
+ */
+function carpentry(ctx, hgt, hrnd) {
+  const y0 = 4 * S;
+  // plain wood with a faint vertical grain everywhere first
+  ctx.fillStyle = '#d6d0c6';
+  ctx.fillRect(0, y0, S * 4, S);
+  hgt.fillStyle = grey(0.5);
+  hgt.fillRect(0, y0, S * 4, S);
+  for (let i = 0; i < 260; i++) {
+    const x = hrnd() * S * 2, w = 1 + hrnd() * 2;
+    ctx.fillStyle = `rgba(${hrnd() < 0.5 ? '255,255,255' : '60,40,20'},${0.04 + hrnd() * 0.06})`;
+    ctx.fillRect(x, y0, w, S);
+  }
+  // the door: four planks, grooves between them
+  for (let k = 0; k < 4; k++) {
+    const x = (k * S) / 4;
+    hgt.fillStyle = grey(0.5 + (hrnd() - 0.5) * 0.04);
+    hgt.fillRect(x + 2, y0, S / 4 - 4, S);
+    for (const c of [ctx, hgt]) {
+      c.fillStyle = c === ctx ? 'rgba(30,20,12,0.75)' : grey(0.22);
+      c.fillRect(x - 2, y0, 4, S);
+    }
+  }
+  // iron straps from the hinge side, with nails, and a ring pull
+  for (const sy of [y0 + 26, y0 + S - 40]) {
+    for (const [c, fill] of [[ctx, '#2a2622'], [hgt, grey(0.74)]]) {
+      c.fillStyle = fill;
+      c.beginPath();
+      c.moveTo(4, sy);
+      c.lineTo(S * 0.72, sy + 2);
+      c.arc(S * 0.72, sy + 7, 5, -Math.PI / 2, Math.PI / 2);
+      c.lineTo(4, sy + 12);
+      c.closePath();
+      c.fill();
+    }
+    for (let k = 0; k < 5; k++) {
+      const nx = 18 + k * ((S * 0.72 - 24) / 4);
+      for (const [c, fill] of [[ctx, '#5a544c'], [hgt, grey(0.9)]]) {
+        c.fillStyle = fill;
+        c.beginPath();
+        c.arc(nx, sy + 6, 2.2, 0, Math.PI * 2);
+        c.fill();
+      }
+    }
+  }
+  for (const [c, fill] of [[ctx, '#2a2622'], [hgt, grey(0.8)]]) {
+    c.strokeStyle = fill;
+    c.lineWidth = 4;
+    c.beginPath();
+    c.arc(S * 0.8, y0 + S * 0.56, 11, 0, Math.PI * 2);
+    c.stroke();
+  }
+  // the shutter: a frame round louvres
+  const sx = S;
+  ctx.fillStyle = '#dcd6cc';
+  ctx.fillRect(sx, y0, S, S);
+  louvres(ctx, hgt, sx, y0, S, S, 0.48, 'rgba(0,0,0,0.3)', 18);
+  ctx.strokeStyle = 'rgba(0,0,0,0.25)';
+  ctx.lineWidth = 3;
+  ctx.strokeRect(sx + 18, y0 + 18, S - 36, S - 36);
+}
+
+/**
+ * Height canvas -> normal canvas, each tile on its own (no slopes across
+ * tile seams). Everything, the read-back included, is worked through in
+ * bands of rows with `step` between them, so a headset keeps drawing frames
+ * while it runs. (The height canvas is CPU-backed, so reading a band is a
+ * copy, not a GPU round trip.)
+ */
+async function reliefNormals(hgt, W, H, strength, step) {
+  const hctx = hgt.getContext('2d');
+  let a = new Float32Array(W * H), b = new Float32Array(W * H);
+  const BAND = 32; // rows per slice (a few ms each on a headset)
+  const bands = async (fn) => {
+    for (let y0 = 0; y0 < H; y0 += BAND) {
+      fn(y0, Math.min(H, y0 + BAND));
+      if (step) await step();
+    }
+  };
+  // the heights, a band at a time
+  await bands((ya, yb) => {
+    const src = hctx.getImageData(0, ya, W, yb - ya).data;
+    for (let i = 0, o = ya * W; i < src.length; i += 4, o++) a[o] = src[i] / 255;
+  });
+  const lo = (v) => v - (v % S); // first pixel of v's tile
+  // two passes of a 3-tap box blur each way: edges become bevels a few
+  // pixels wide, which survive a couple of mip levels instead of averaging out
+  for (let pass = 0; pass < 2; pass++) {
+    await bands((ya, yb) => {
+      for (let y = ya; y < yb; y++) {
+        const r = y * W;
+        for (let x = 0; x < W; x++) {
+          const t = lo(x);
+          const xl = x > t ? x - 1 : x, xr = x < t + S - 1 ? x + 1 : x;
+          b[r + x] = (a[r + xl] + a[r + x] + a[r + xr]) / 3;
+        }
+      }
+    });
+    await bands((ya, yb) => {
+      for (let y = ya; y < yb; y++) {
+        const t = lo(y);
+        const yu = y > t ? y - 1 : y, yd = y < t + S - 1 ? y + 1 : y;
+        for (let x = 0; x < W; x++) a[y * W + x] = (b[yu * W + x] + b[y * W + x] + b[yd * W + x]) / 3;
+      }
+    });
+  }
+  // (CPU-backed too: each band goes in with a copy)
+  const nor = makeCanvas(W, H, { willReadFrequently: true });
+  const nctx = nor.getContext('2d');
+  // a pixel is ~9 mm along the wall and ~12 mm up it
+  const kx = strength, ky = strength * 0.78;
+  await bands((ya, yb) => {
+    const out = nctx.createImageData(W, yb - ya);
+    for (let y = ya; y < yb; y++) {
+      const t = lo(y);
+      const yu = y > t ? y - 1 : y, yd = y < t + S - 1 ? y + 1 : y;
+      for (let x = 0; x < W; x++) {
+        const tx = lo(x);
+        const xl = x > tx ? x - 1 : x, xr = x < tx + S - 1 ? x + 1 : x;
+        // slopes per two pixels; canvas y runs down, v runs up (as surface() below)
+        const nx = -((a[y * W + xr] - a[y * W + xl]) / (xr - xl)) * 2 * kx;
+        const ny = ((a[yd * W + x] - a[yu * W + x]) / (yd - yu)) * 2 * ky;
+        const l = Math.sqrt(nx * nx + ny * ny + 1); // (Math.hypot is several times slower here)
+        const i = ((y - ya) * W + x) * 4;
+        out.data[i] = (nx / l) * 127.5 + 127.5;
+        out.data[i + 1] = (ny / l) * 127.5 + 127.5;
+        out.data[i + 2] = (1 / l) * 127.5 + 127.5;
+        out.data[i + 3] = 255;
+      }
+    }
+    nctx.putImageData(out, 0, ya);
+  });
+  return nor;
+}
+
+// the atlas canvases, made once (painting, then the relief) and kept, so
+// bringing the globe back out is instant; promises, so two builds at once share them
+let PAINTED = null;
+let RELIEF = null;
+
+/** paint the atlas a tile at a time (with `step` between) */
+async function paintAtlas(W, H, step) {
+  const c = makeCanvas(W, H);
+  const e = makeCanvas(W, H);
+  // (the heights are read back, so that canvas is kept on the CPU)
+  const h = makeCanvas(W, H, { willReadFrequently: true });
   const ctx = c.getContext('2d');
   const emis = e.getContext('2d');
+  const hgt = h.getContext('2d');
+  emis.fillStyle = '#000';
+  emis.fillRect(0, 0, W, H);
   const rnd = mulberry32(17);
-  for (let col = 0; col < 4; col++) for (let row = 0; row < 4; row++) tile(ctx, emis, col, row, rnd);
-  return { map: canvasTexture(c), emissive: canvasTexture(e) };
+  const hrnd = mulberry32(29); // (its own stream, so the painting stays as it was)
+  for (let col = 0; col < 4; col++) {
+    for (let row = 0; row < 4; row++) {
+      tile(ctx, emis, hgt, col, row, rnd, hrnd);
+      if (step) await step();
+    }
+  }
+  carpentry(ctx, hgt, hrnd);
+  return { col: c, emis: e, hgt: h };
+}
+
+/**
+ * The façade atlas: colour, emissive and (with relief) the normal map, one
+ * mipmapped texture each. The canvases are made once and kept; each call
+ * returns new textures for the caller's MaterialKit to track and dispose.
+ */
+export async function facadeAtlas({ relief = false, step = null } = {}) {
+  const W = S * ATLAS.cols, H = S * ATLAS.rows;
+  PAINTED ||= paintAtlas(W, H, step);
+  const f = await PAINTED;
+  if (relief) RELIEF ||= reliefNormals(f.hgt, W, H, 5, step);
+  const nor = relief ? await RELIEF : null;
+  return {
+    map: canvasTexture(f.col),
+    emissive: canvasTexture(f.emis),
+    normal: nor ? canvasTexture(nor, { srgb: false }) : null,
+  };
 }
 
 /** UV rect [u0, v0, u1, v1] of an atlas tile (v up, canvas flipped) */
 export function tileUV(style, kind) {
   const pad = 0.004;
-  const u0 = style / 4 + pad, u1 = (style + 1) / 4 - pad;
-  const v1 = 1 - kind / 4 - pad, v0 = 1 - (kind + 1) / 4 + pad;
+  const u0 = style / ATLAS.cols + pad, u1 = (style + 1) / ATLAS.cols - pad;
+  const v1 = 1 - kind / ATLAS.rows - pad, v0 = 1 - (kind + 1) / ATLAS.rows + pad;
   return [u0, v0, u1, v1];
 }
 
