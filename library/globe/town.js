@@ -4,6 +4,7 @@ import { mulberry32 } from '../core/random.js';
 import { T, STREETS, edgeR, topHeight, angDist, terraceOf, streetMask } from './terrain.js';
 import { facadeAtlas, tileUV, roofTiles, stoneBlocks, woodGrain, roseWindow, signAtlas } from './townTextures.js';
 import { makeDetailer, houseLook } from './details.js';
+import { buildFlags } from './flags.js';
 
 /**
  * The castle town on the floating island (island-local coordinates).
@@ -112,6 +113,10 @@ export async function buildTown(kit, uniforms, { lod = 'hero', seed = 11, step =
   const drnd = mulberry32(seed + 101);
   const DT = makeDetailer(bag, drnd, { hero });
   const plainLook = { shutter: '#3d5a3a', door: '#5a3420', barge: '#3a2618', roof: '#5b6b7c', lit: 0.3 };
+  // cloth in the wind (pennants and banners), built as one mesh at the end
+  const flagSpecs = [];
+  const WIND = new THREE.Vector3(Math.cos(0.4), 0, Math.sin(0.4));
+  const DOWN = new THREE.Vector3(0, -1, 0);
   const hill = new THREE.Vector2(T.hill[0], T.hill[1]);
   const maxR = T.edge + 3;
   const orderOf = (x, z) => Math.min(0.85, Math.hypot(x - hill.x, z - hill.y) / maxR);
@@ -385,9 +390,39 @@ export async function buildTown(kit, uniforms, { lod = 'hero', seed = 11, step =
       const t = (k + 0.5) / Math.max(1, Math.round(len / 1.25));
       const p = p0.clone().lerp(p1, t).addScaledVector(out, 0.38);
       bag.add(merlon.clone(), mat(p.x, wallTop + 0.35, p.z, 0, yaw), 'stone', stoneCol, { build, lit: 2 });
+      if (hero) {
+        // a capstone on each merlon (snow settles on it) and a slit through it
+        bag.add(new THREE.BoxGeometry(0.7, 0.09, 0.44), mat(p.x, wallTop + 0.74, p.z, 0, yaw), 'stone', '#968f84', { build, lit: 2 });
+        const sp = p.clone().addScaledVector(out, 0.18);
+        bag.add(new THREE.BoxGeometry(0.07, 0.36, 0.02), mat(sp.x, wallTop + 0.38, sp.z, 0, yaw), 'stone', '#1e1b18', { build, lit: 2 });
+      }
     }
   }
   merlon.dispose();
+  // stone stairs up the inside of the town wall to the wall-walk, where there's room
+  if (hero) {
+    let made = 0;
+    for (let k = 0; k < 24 && made < 4; k++) {
+      const a = T.gateA + 0.55 + (k / 24) * Math.PI * 2;
+      const r = wallR(a) - 0.55 - 0.6; // against the wall's inner face
+      const tan = new THREE.Vector3(-Math.sin(a), 0, Math.cos(a));
+      const p0 = new THREE.Vector3(Math.cos(a) * r, 0, Math.sin(a) * r);
+      const run = 5.2;
+      const mid = p0.clone().addScaledVector(tan, run / 2);
+      if (angDist(a, T.ravineA) < 0.35 || T.streams.some((sa) => angDist(a, sa) < 0.25) || angDist(a, T.gateA) < 0.5) continue;
+      if (houses.some((h) => Math.hypot(h.x - mid.x, h.z - mid.z) < Math.max(h.w, h.d) * 0.5 + run * 0.5 + 0.4)) continue;
+      const g0 = topHeight(p0.x, p0.z);
+      const steps = 14;
+      const yaw = Math.atan2(tan.x, tan.z);
+      const build = [orderOf(p0.x, p0.z) + 0.05, g0];
+      for (let st = 0; st < steps; st++) {
+        const top = g0 + ((st + 1) / steps) * (wallTop - g0);
+        const c = p0.clone().addScaledVector(tan, ((st + 0.5) / steps) * run);
+        bag.add(new THREE.BoxGeometry(1.1, top - g0 + 1.2, run / steps + 0.02), mat(c.x, (top + g0 - 1.2) / 2, c.z, 0, yaw), 'stone', '#9a948a', { build, lit: 2 });
+      }
+      made++;
+    }
+  }
   // round towers with cone roofs (and a perch on two of them)
   const tower = (x, z, r, h, roofCol, build, perch = false, banner = true) => {
     const g0 = topHeight(x, z) - 1.5;
@@ -419,7 +454,7 @@ export async function buildTown(kit, uniforms, { lod = 'hero', seed = 11, step =
     for (let k = 0; k < cu.count; k++) cu.setXY(k, cu.getX(k) * r * 6, cu.getY(k) * r * 2);
     bag.add(cone, mat(x, cb + r * 1.2, z), 'roof', roofCol, { build, lit: 2 });
     bag.add(lathe([[0, 0], [0.12, 0], [0.18, 0.2], [0.05, 0.4], [0.03, 1.4], [0, 1.45]], 8), mat(x, cb + r * 2.4, z), 'gold', undefined, { build, lit: 2 });
-    if (banner && hero) bag.add(new THREE.BoxGeometry(0.04, 0.5, 0.9), mat(x, cb + r * 2.4 + 0.8, z + 0.45), 'wood', roofCol, { build, lit: 2 });
+    if (banner && hero) flagSpecs.push({ p: new THREE.Vector3(x, cb + r * 2.4 + 1.32, z), along: WIND, across: DOWN, len: 1.15, wid: 0.5, colors: [roofCol, '#e8d8a0'], pattern: 'pennant', phase: drnd() * 6 });
     // arrow-slit windows that glow
     if (hero) {
       for (let k = 0; k < 3; k++) {
@@ -453,9 +488,58 @@ export async function buildTown(kit, uniforms, { lod = 'hero', seed = 11, step =
     for (const s of [1, -1]) tower(c.x + t.x * s * 3.2, c.z + t.z * s * 3.2, 2.4, 9, '#8a2e2e', [0.6, 0], false);
     const yaw = Math.atan2(t.x, t.z) - Math.PI / 2;
     const build = [0.62, 0];
-    bag.add(new THREE.BoxGeometry(4.2, 2.6, 2.2), mat(c.x, 6.4, c.z, 0, yaw + Math.PI / 2), 'stone', stoneCol, { build, lit: 2 });
-    for (let k = 0; k < 6; k++) bag.add(new THREE.BoxGeometry(0.08, 4.8, 0.08), mat(c.x + t.x * (k - 2.5) * 0.6, 2.6, c.z + t.z * (k - 2.5) * 0.6), 'wood', '#2a2420', { build, lit: 2 });
-    for (let k = 0; k < 5; k++) bag.add(new THREE.BoxGeometry(3.6, 0.08, 0.08), mat(c.x, 0.6 + k * 0.9, c.z, 0, yaw + Math.PI / 2), 'wood', '#2a2420', { build, lit: 2 });
+    const ga = { build, lit: 2 };
+    bag.add(new THREE.BoxGeometry(4.2, 2.6, 2.2), mat(c.x, 6.4, c.z, 0, yaw + Math.PI / 2), 'stone', stoneCol, ga);
+    if (!hero) {
+      for (let k = 0; k < 6; k++) bag.add(new THREE.BoxGeometry(0.08, 4.8, 0.08), mat(c.x + t.x * (k - 2.5) * 0.6, 2.6, c.z + t.z * (k - 2.5) * 0.6), 'wood', '#2a2420', ga);
+    } else {
+      // the gate's own frame: +z out through the gate, x across it, y up from the ground
+      const o = new THREE.Vector3(Math.cos(a), 0, Math.sin(a));
+      const G2 = mat(c.x, 0, c.z, 0, Math.atan2(o.x, o.z));
+      const gb = (w, h, d, x, y, z, key, col, rx = 0, ry = 0, rz = 0) => bag.add(new THREE.BoxGeometry(w, h, d), G2.clone().multiply(mat(x, y, z, rx, ry, rz)), key, col, ga);
+      // jambs and an arch of dressed voussoirs, with the wall filled in above it
+      for (const sx of [-1, 1]) gb(0.5, 4.2, 2.3, sx * 1.15, 2.1, 0, 'stone', '#a8a196');
+      for (let k = 0; k <= 8; k++) {
+        const th = (k / 8) * Math.PI;
+        gb(0.3, 0.42, 0.3, Math.cos(th) * 1.0, 4.2 + Math.sin(th) * 0.95, 1.16, 'stone', k === 4 ? '#bdb6a8' : '#a8a196', 0, 0, th - Math.PI / 2);
+      }
+      for (const sx of [-1, 1]) gb(0.62, 0.95, 2.2, sx * 0.95, 4.65, 0, 'stone', stoneCol);
+      // the portcullis, half raised, with iron spikes along its foot
+      const iron = '#26221e';
+      for (let k = 0; k < 7; k++) {
+        gb(0.07, 2.0, 0.07, -0.84 + k * 0.28, 4.05, 0.62, 'wood', iron);
+        bag.add(new THREE.ConeGeometry(0.05, 0.22, 5).rotateX(Math.PI), G2.clone().multiply(mat(-0.84 + k * 0.28, 2.95, 0.62)), 'wood', iron, ga);
+      }
+      for (let k = 0; k < 4; k++) gb(1.9, 0.07, 0.07, 0, 3.2 + k * 0.55, 0.62, 'wood', iron);
+      // the gates, swung open into the passage, banded with iron
+      for (const sx of [-1, 1]) {
+        const leaf = G2.clone().multiply(mat(sx * 0.95, 0, -0.2, 0, sx * 1.25, 0));
+        bag.add(new THREE.BoxGeometry(0.95, 3.7, 0.12), leaf.clone().multiply(mat(-sx * 0.47, 1.85, 0)), 'wood', '#4a2c1a', ga);
+        for (const yy of [0.6, 1.85, 3.1]) bag.add(new THREE.BoxGeometry(0.9, 0.08, 0.15), leaf.clone().multiply(mat(-sx * 0.47, yy, 0)), 'wood', iron, ga);
+      }
+      // machicolations over the gate and battlements on top
+      for (let k = 0; k < 7; k++) gb(0.22, 0.42, 0.42, -1.65 + k * 0.55, 4.95, 1.2, 'stone', '#8a847a');
+      gb(4.2, 0.3, 0.3, 0, 5.25, 1.25, 'stone', '#968f84');
+      for (let k = 0; k < 5; k++) gb(0.55, 0.7, 0.4, -1.7 + k * 0.85, 8.05, 0.9, 'stone', stoneCol);
+      // a coat of arms over the arch: a red shield with a gold chevron and border
+      gb(0.92, 0.82, 0.08, 0, 6.5, 1.15, 'wood', '#8a1f1f');
+      gb(0.66, 0.66, 0.08, 0, 6.03, 1.15, 'wood', '#8a1f1f', 0, 0, Math.PI / 4);
+      for (const sx of [-1, 1]) gb(0.62, 0.11, 0.09, sx * 0.2, 6.35, 1.19, 'gold', undefined, 0, 0, sx * 0.62);
+      gb(0.98, 0.07, 0.09, 0, 6.92, 1.19, 'gold', undefined);
+      // lanterns either side of the gate
+      for (const sx of [-1, 1]) {
+        gb(0.06, 0.06, 0.35, sx * 1.45, 3.4, 1.35, 'wood', iron);
+        gb(0.2, 0.28, 0.2, sx * 1.45, 3.2, 1.5, 'wood', iron);
+        lanterns.push(new THREE.Vector3(sx * 1.45, 3.2, 1.5).applyMatrix4(G2));
+      }
+      // long banners hanging down the gate towers' fronts
+      for (const sx of [-1, 1]) {
+        const top = new THREE.Vector3(sx * 3.2, 8.3, 2.48).applyMatrix4(G2);
+        const across = new THREE.Vector3(1, 0, 0).transformDirection(G2);
+        gb(1.1, 0.08, 0.08, sx * 3.2, 8.32, 2.5, 'gold', undefined);
+        flagSpecs.push({ p: top, along: DOWN, across, len: 3.4, wid: 0.95, colors: ['#8a1f1f', '#d9a84e'], pattern: 'banner', phase: sx * 1.7 });
+      }
+    }
   }
 
   // inner wall on the first step, with towers and gate arches at the lanes
@@ -508,6 +592,20 @@ export async function buildTown(kit, uniforms, { lod = 'hero', seed = 11, step =
       const off = [[t * 9, 4.75], [4.75, t * 9], [-t * 9, -4.75], [-4.75, -t * 9]][side];
       box(0.7, 0.8, 0.4, cx + off[0], g0 + 14.8, cz + off[1]);
     }
+    if (hero) {
+      // corbels under the keep's parapet, and a string course between floors
+      for (let k = 0; k < 40; k++) {
+        const side = Math.floor(k / 10), tt = ((k % 10) + 0.5) / 10 - 0.5;
+        const off = [[tt * 9, 4.6], [4.6, tt * 9], [-tt * 9, -4.6], [-4.6, -tt * 9]][side];
+        box(0.32, 0.5, 0.32, cx + off[0], g0 + 13.55, cz + off[1], '#968f84');
+      }
+      for (const yy of [3.6, 7.0, 10.4]) {
+        box(9.25, 0.22, 0.25, cx, g0 + yy, cz + 4.55, '#a59e90');
+        box(9.25, 0.22, 0.25, cx, g0 + yy, cz - 4.55, '#a59e90');
+        box(0.25, 0.22, 9.25, cx + 4.55, g0 + yy, cz, '#a59e90');
+        box(0.25, 0.22, 9.25, cx - 4.55, g0 + yy, cz, '#a59e90');
+      }
+    }
     // windows on the keep
     for (let f = 0; f < 3; f++) {
       for (const [ox, oz, yaw] of [[0, 4.52, 0], [4.52, 0, Math.PI / 2], [0, -4.52, Math.PI], [-4.52, 0, -Math.PI / 2]]) {
@@ -519,6 +617,15 @@ export async function buildTown(kit, uniforms, { lod = 'hero', seed = 11, step =
         uv.setXY(2, u0, v0);
         uv.setXY(3, u1, v0);
         bag.add(q, mat(cx + ox, g0 + 4 + f * 3.4, cz + oz, 0, yaw), 'walls', undefined, { build, lit: 0.1 + f * 0.15 });
+        if (hero) {
+          // a stone surround with a hood moulding over each window
+          const wm = mat(cx + ox, g0 + 4 + f * 3.4, cz + oz, 0, yaw);
+          const wb = (w, h, d, x, y, z) => bag.add(new THREE.BoxGeometry(w, h, d), wm.clone().multiply(mat(x, y, z)), 'stone', '#b5ae9f', { build, lit: 2 });
+          // (the painted window spans y -0.65..0.75 and x +-0.45 of the tile)
+          wb(1.25, 0.16, 0.22, 0, 0.9, 0.05);
+          wb(1.2, 0.12, 0.3, 0, -0.74, 0.1);
+          for (const sx of [-1, 1]) wb(0.14, 1.6, 0.16, sx * 0.55, 0.06, 0.04);
+        }
       }
     }
     // corner turrets
@@ -578,6 +685,25 @@ export async function buildTown(kit, uniforms, { lod = 'hero', seed = 11, step =
     // rose window
     bag.add(new THREE.CircleGeometry(1.4, 24), m.clone().multiply(mat(0, 7.6, L / 2 + 0.06)), 'glass', undefined, { build, lit: 0.05 });
     bag.add(new THREE.TorusGeometry(1.45, 0.14, 6, 24), m.clone().multiply(mat(0, 7.6, L / 2 + 0.08)), 'stone', '#c8c0b0', { build, lit: 2 });
+    if (hero) {
+      // tall pointed lancets of stained glass between the buttresses
+      for (let k = 0; k < 3; k++) {
+        for (const sx of [1, -1]) {
+          const lz = -L / 2 + 3.4 + k * 2.8;
+          const lm = m.clone().multiply(mat(sx * (W / 2 + 0.03), 3.3, lz, 0, (sx * Math.PI) / 2));
+          const q = new THREE.PlaneGeometry(0.8, 3.0);
+          const uv = q.attributes.uv;
+          // a strip of the rose window's glass, a different one for each
+          const u0 = 0.18 + k * 0.2;
+          for (let i = 0; i < 4; i++) uv.setXY(i, u0 + uv.getX(i) * 0.14, 0.12 + uv.getY(i) * 0.76);
+          bag.add(q, lm.clone(), 'glass', undefined, { build, lit: 0.05 + k * 0.03 });
+          bag.add(new THREE.ConeGeometry(0.42, 0.7, 4, 1, true).rotateY(Math.PI / 4).scale(1, 1, 0.12), lm.clone().multiply(mat(0, 1.84, 0.02)), 'stone', '#c8c0b0', { build, lit: 2 });
+          for (const ex of [-1, 1]) bag.add(new THREE.BoxGeometry(0.12, 3.1, 0.12), lm.clone().multiply(mat(ex * 0.44, 0, 0.04)), 'stone', '#c8c0b0', { build, lit: 2 });
+          bag.add(new THREE.BoxGeometry(1.0, 0.12, 0.2), lm.clone().multiply(mat(0, -1.56, 0.06)), 'stone', '#c8c0b0', { build, lit: 2 });
+          bag.add(new THREE.BoxGeometry(0.05, 2.9, 0.05), lm.clone().multiply(mat(0, 0, 0.03)), 'stone', '#3a3430', { build, lit: 2 });
+        }
+      }
+    }
     // apse
     const apse = new THREE.CylinderGeometry(W / 2, W / 2, 6, 14, 1, false, Math.PI / 2, Math.PI);
     bag.add(apse, m.clone().multiply(mat(0, 3, -L / 2)), 'stone', '#b5ae9f', { build, lit: 2 });
@@ -812,6 +938,8 @@ export async function buildTown(kit, uniforms, { lod = 'hero', seed = 11, step =
   for (const p of DT.lamps) lanterns.push(p);
   if (step) await step();
   const group = bag.build(mats, { name: 'town' });
+  const flags = hero ? buildFlags(kit, uniforms, townMaterial, flagSpecs) : null;
+  if (flags) group.add(flags);
   if (sails) group.add(sails);
 
   // lantern-bearers patrolling the outer wall walk
@@ -992,9 +1120,10 @@ function worldUV(g, k, grain = false) {
 }
 
 /**
- * Snow lying on the roofs in drifts: thin just after a shake (the flakes
- * are all in the air), building up to about half the roof as they settle
- * (uSnow), so the tiles' colours still show; the steepest faces stay bare.
+ * Snow lying on the roofs: resting along the rows of tiles (their lips and
+ * colours showing through), thin just after a shake while the flakes are in
+ * the air, filling in as they settle (uSnow), deep in drifts here and there;
+ * the steepest faces stay bare.
  */
 function roofDrifts(m) {
   const base = m.onBeforeCompile;
@@ -1016,11 +1145,14 @@ function roofDrifts(m) {
         `#include <color_fragment>
         {
           float n = rdNoise(vRoofP.xz * 0.55 + vRoofP.y * 0.4) * 0.7 + rdNoise(vRoofP.xz * 2.3) * 0.3;
-          // uSnow runs ~0.35 (just shaken, the flakes all in the air) to ~0.9 (all settled);
-          // patches with crisp edges, like snow half melted off a roof
-          float level = 0.72 - (uSnow - 0.35) * 0.55;
-          float cover = smoothstep(level - 0.03, level + 0.03, n) * smoothstep(0.3, 0.55, vUp);
-          diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.93, 0.96, 1.0), cover);
+          // uSnow runs ~0.35 (just shaken, the flakes all in the air) to ~0.9 (all settled).
+          // Snow rests along each row of tiles, the lips showing through; where it lies
+          // deepest it covers them too.
+          float amount = clamp((uSnow - 0.35) * 1.0 + (n - 0.5) * 0.9, 0.0, 1.0);
+          float ty = fract((1.0 - vMapUv.y) * 8.0);
+          float onTile = smoothstep(0.08, 0.22, ty) * (1.0 - smoothstep(0.68, 0.86, ty));
+          float cover = max(onTile * smoothstep(0.12, 0.35, amount), smoothstep(0.8, 0.92, amount)) * smoothstep(0.3, 0.55, vUp);
+          diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.93, 0.96, 1.0), cover * 0.95);
         }`,
       );
   };

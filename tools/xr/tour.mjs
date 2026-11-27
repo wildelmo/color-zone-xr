@@ -91,6 +91,18 @@ const views = await p.evaluate(async () => {
     v.push({ name: 'door', at: w(fx + nx * 2.0, h.y + 2.7, fz + nz * 2.0), look: w(fx, h.y + 1.2, fz) });
     v.push({ name: 'eaves', at: w(fx + nx * 2.6, h.y + h.wallsH + 1.6, fz + nz * 2.6), look: w(fx, h.y + h.wallsH, fz) });
   }
+  // the castle: the gate up close, the keep, the cathedral
+  const gc = w(Math.cos(gate) * 27, 3, Math.sin(gate) * 27);
+  v.push({ name: 'gate-close', at: ring(gate, 2.95, 1.25), look: gc });
+  const kc = w(T.hill[0], 12, T.hill[1]);
+  v.push({ name: 'keep', at: ring(gate + 0.3, 3.0, 1.45), look: kc });
+  const cathA = T.lanes[1] + 0.42;
+  const cx = T.hill[0] + Math.cos(cathA) * 15.2, cz = T.hill[1] + Math.sin(cathA) * 15.2;
+  // from its side, where the lancets are (its frame's +x)
+  const cyaw = Math.atan2(Math.cos(cathA), Math.sin(cathA)) + Math.PI;
+  const nx = Math.cos(cyaw), nz = -Math.sin(cyaw);
+  const side = Math.hypot(cx + nx * 9, cz + nz * 9) > Math.hypot(cx - nx * 9, cz - nz * 9) ? 1 : -1; // the side facing outward
+  v.push({ name: 'cathedral', at: w(cx + side * nx * 9, topHeight(cx, cz) + 9, cz + side * nz * 9), look: w(cx, topHeight(cx, cz) + 3.5, cz) });
   // a balcony, a shop sign, string lights and a snowman, up close
   const find = (k) => houses.find((h) => h[k] && clear(h));
   for (const k of ['balcony', 'sign', 'lights']) {
