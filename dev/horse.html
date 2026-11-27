@@ -17,8 +17,10 @@ const pm = new THREE.PMREMGenerator(renderer);
 scene.environment = pm.fromScene(new RoomEnvironment(), 0.04).texture;
 const cam = new THREE.PerspectiveCamera(35, innerWidth / innerHeight, 0.01, 50);
 const yaw = +(q.get('yaw') || 0.5), pitch = +(q.get('pitch') || 0.15), dist = +(q.get('dist') || 3.6);
-cam.position.set(Math.sin(yaw) * Math.cos(pitch) * dist, 0.15 + Math.sin(pitch) * dist, Math.cos(yaw) * Math.cos(pitch) * dist);
-cam.lookAt(0, 0.12, 0);
+// ?tx=&ty=&tz= aims the camera at a point (e.g. the neck's crest) instead of the saddle
+const tx = +(q.get('tx') || 0), ty = +(q.get('ty') || 0.12), tz = +(q.get('tz') || 0);
+cam.position.set(tx + Math.sin(yaw) * Math.cos(pitch) * dist, ty + 0.03 + Math.sin(pitch) * dist, tz + Math.cos(yaw) * Math.cos(pitch) * dist);
+cam.lookAt(tx, ty, tz);
 const dl = new THREE.DirectionalLight(0xfff0dd, 2.2); dl.position.set(2, 3, 2); scene.add(dl);
 const M = new URL('../library/carousel/horseModel.js', import.meta.url).href;
 const cell = +(q.get('cell') || 0.03);

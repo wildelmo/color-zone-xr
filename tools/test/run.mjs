@@ -100,6 +100,33 @@ const look = (page, target, pos) =>
   );
 
 // ------------------------------------------------------------------ desktop
+// ------------------------------------------------- the carousel horse's mane
+// (pure geometry, no browser) a mane grows from the crest, the top line of
+// the neck, and falls to the side: along the whole neck the hair must cover
+// the crest and stand proud of it, with no bare strip down the middle
+console.log("\n▶ The horses' manes");
+{
+  const { layers } = await import('../../library/carousel/horseModel.js');
+  const body = layers.body.sdf, mane = layers.mane.sdf;
+  const OXH = -0.06;
+  const top = (f, x, z) => {
+    for (let y = 1.0; y > 0; y -= 0.002) if (f(x + OXH, y, z) < 0) return y;
+    return null;
+  };
+  let bare = 0, buried = 0, n = 0;
+  for (let x = 0.34; x <= 0.62; x += 0.04) {
+    const bt = top(body, x, 0), mt = top(mane, x, 0);
+    if (mt === null || mt < bt + 0.01) buried++;
+    // across the top of the neck: hair over the body at every point of the crest band
+    for (let z = -0.06; z <= 0.061; z += 0.02) {
+      n++;
+      const b = top(body, x, z), m = top(mane, x, z);
+      if (m === null || (b !== null && m <= b + 0.003)) bare++;
+    }
+  }
+  check(buried === 0 && bare === 0, `the mane covers the crest from withers to poll (${n} points across the top of the neck: ${bare} bare, ${buried} places where the hair sinks into the neck)`);
+}
+
 console.log('\n▶ Desktop: boot, assemble, wind, play');
 if (want('desktop')) {
   const page = await newPage({ width: 1280, height: 800 });
