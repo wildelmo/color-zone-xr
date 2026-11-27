@@ -109,11 +109,12 @@ URL options: `?instant` skips the assembly show, `?asset=carousel` or `?asset=gl
 
 The Quest is a mobile GPU, so the detail is spent where you're looking:
 
-- **Shelf vs hero.** The gallery only ever holds cheap shelf builds plus one hero. Picking another curio disposes the current hero's geometries, materials and textures (the test checks that GPU memory is actually freed) before the next one is built.
+- **Shelf vs hero.** The gallery only ever holds cheap shelf builds plus one hero. A shelf preview is its own miniature of about 15,000 triangles: the carousel's 24 horses are one instanced mesh painted by a single shader. Picking another curio disposes the current hero's geometries, materials and textures (the test checks that GPU memory is actually freed) before the next one is built.
 - **Builds never drop frames.** Heavy work is time-sliced (`Frames.step()`, about 6 ms per frame, and this works inside WebXR where `requestAnimationFrame` stops). SDF meshing runs in a worker. Textures are uploaded and shaders compiled before anything appears.
 - **Few draw calls.** `GeoBag` merges every moulding, bolt and trim into one mesh per material. Horses, poles, rods, crankshafts, comb teeth and bulbs are `InstancedMesh`es. The whole hero is about 75 draw calls.
 - **Per-horse level of detail.** Each horse layer has a high- and a low-detail instanced mesh, and every frame the nearest few horses you're looking at get the full sculpt.
 - **Painted, not modelled.** The saddle blankets are painted onto the body in the shader from a per-vertex distance field, which gives crisp scallops and a gold pinstripe without extra geometry.
+- **Detail only when it's big enough to see.** The snow globe's carved trim (window frames, timbering, railings, icicles: about 144,000 triangles) is drawn only while a piece of it would cover a couple of pixels. It's off when the globe sits on the table, and comes on when you hold it close and stretch it, zoom in on desktop, or go Up close. It never casts shadows.
 - **Cheap lighting.** One spotlight with a shadow follows the hero and is re-fitted to its bounds every frame. Bulb glows are additive billboards, with no lights and no post-processing.
 
 ## The library
@@ -215,6 +216,13 @@ Targets are world positions in metres or names of things in the scene (`pedestal
 - a snowman, townsfolk, both dragons (held still), a waterfall and under the island.
 
 It also prints the triangle and draw-call counts and the town's build time, so a change can be checked before and after.
+
+`node tools/xr/budget.mjs --out budget/after --shots --compare budget/before/budget.json` (or `npm run budget`) is the frame budget. For each curio on the table, held close at three times its size, and in its big view, it reports:
+- the triangles and draw calls in a whole frame (both eyes plus the shadow pass);
+- the shadow pass's share;
+- where the triangles are: the room, each shelf preview, the hero, and the heaviest meshes.
+
+With `--shots` it saves a picture of each view and a close-up of every shelf preview from the same viewpoints each run, and `--compare` prints the change against an earlier run. These are counts, not timings; only a headset can measure frame time.
 
 ## What's next
 

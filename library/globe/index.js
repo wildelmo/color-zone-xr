@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { MaterialKit } from '../core/materials.js';
 import { BulbString } from '../core/bulbs.js';
-import { disposeDeep } from '../core/geometry.js';
+import { GeoBag, disposeDeep, mat } from '../core/geometry.js';
 import { meshLayer, modelDetails } from '../core/sdfClient.js';
 import { Emitter, Timeline, ease } from '../core/asset.js';
 import { G } from './dimensions.js';
@@ -11,7 +11,7 @@ import { buildSmoke } from './smoke.js';
 import { groundMaterial } from './ground.js';
 import { buildTownfolk } from './townfolk.js';
 import { buildDragons } from './dragons.js';
-import { buildGlass } from './glass.js';
+import { buildGlass, collarGeometry } from './glass.js';
 import { buildWater } from './water.js';
 import { buildCrystals } from './crystals.js';
 import { buildSnow } from './snow.js';
@@ -47,6 +47,42 @@ export const info = {
 
 const RUN_SECONDS = 120;
 
+/**
+ * The carved trim (window frames, beams, railings, icicles: members about
+ * 0.07 across) is shown only while one subtends more than about 1.2 mrad
+ * (two Quest 3 pixels), measured from the camera to the nearest point of the
+ * trim's bounding sphere, and hidden again below 0.9 mrad (the gap keeps it
+ * from flickering at the boundary). Scale cancels out: a size s at a local
+ * distance d subtends s / d radians.
+ */
+export const TRIM_LOD = { size: 0.07, show: 1.2e-3, hide: 0.9e-3 };
+
+/**
+ * The shelf's island has no ground shader: bake its look into the vertex
+ * colours instead (as ground.js paints it): snow on the flat tops, bare
+ * blue-grey rock on the cliffs and darker rock underneath.
+ */
+function shelfIslandColors(geo) {
+  const n = geo.attributes.normal, c = geo.attributes.color;
+  if (!n || !c) return geo;
+  const ss = (e0, e1, x) => THREE.MathUtils.smoothstep(x, e0, e1);
+  const rock = [0.25, 0.27, 0.31], snow = [0.92, 0.95, 1.0];
+  for (let i = 0; i < c.count; i++) {
+    const up = n.getY(i);
+    const col = [c.getX(i), c.getY(i), c.getZ(i)];
+    const snowy = ss(0.72, 0.86, (col[0] + col[1] + col[2]) / 3);
+    const flat = ss(0.55, 0.8, up), steep = 1 - ss(0.5, 0.78, up), under = 1 - ss(-0.3, 0.1, up);
+    for (let k = 0; k < 3; k++) {
+      let v = col[k] + (snow[k] - col[k]) * snowy * flat;
+      v += (rock[k] - v) * steep * snowy;
+      v += (rock[k] * 0.8 - v) * under;
+      col[k] = v;
+    }
+    c.setXYZ(i, col[0], col[1], col[2]);
+  }
+  return geo;
+}
+
 export async function createGlobe(ctx, { lod = 'hero' } = {}) {
   const hero = lod === 'hero';
   const progress = ctx.progress || (() => {});
@@ -57,7 +93,8 @@ export async function createGlobe(ctx, { lod = 'hero' } = {}) {
 
   // ---------------------------------------------------------------- rock
   progress(0.05, 'hewing the rock');
-  const cells = hero ? { island: 0.8, floor: 1.2, base: 1.25 } : { island: 1.6, floor: 2.2, base: 2.4 };
+  // (the shelf preview is about 26 cm across, seen from 60 cm or more)
+  const cells = hero ? { island: 0.8, floor: 1.2, base: 1.25 } : { island: 3.4, floor: 5.5, base: 5.6 };
   const [islandGeo, floorGeo, baseGeo, anchors] = await Promise.all([
     meshLayer(ROCK, 'island', cells.island),
     meshLayer(ROCK, 'floor', cells.floor),
@@ -65,26 +102,41 @@ export async function createGlobe(ctx, { lod = 'hero' } = {}) {
     modelDetails(ROCK),
   ]);
   await ctx.step();
-  const rockMat = groundMaterial(kit, U);
-  const floorMat = kit.standard({ vertexColors: true, roughness: 0.9 });
-  const baseMat = kit.standard({ vertexColors: true, roughness: 0.32, metalness: 0.25, envMapIntensity: 1.8 });
-  const base = new THREE.Mesh(baseGeo, baseMat);
-  base.name = 'globe:base';
-  base.castShadow = base.receiveShadow = true;
-  const floor = new THREE.Mesh(floorGeo, floorMat);
-  floor.name = 'globe:floor';
-  floor.receiveShadow = true;
   const island = new THREE.Group();
   island.name = 'island';
   island.position.y = G.islandY;
-  const rock = new THREE.Mesh(islandGeo, rockMat);
-  rock.name = 'island:rock';
-  rock.castShadow = rock.receiveShadow = true;
-  island.add(rock);
-  root.add(base, floor, island);
+  let base = null, floor = null;
+  if (hero) {
+    const rockMat = groundMaterial(kit, U);
+    const floorMat = kit.standard({ vertexColors: true, roughness: 0.9 });
+    const baseMat = kit.standard({ vertexColors: true, roughness: 0.32, metalness: 0.25, envMapIntensity: 1.8 });
+    base = new THREE.Mesh(baseGeo, baseMat);
+    base.name = 'globe:base';
+    base.castShadow = base.receiveShadow = true;
+    floor = new THREE.Mesh(floorGeo, floorMat);
+    floor.name = 'globe:floor';
+    floor.receiveShadow = true;
+    const rock = new THREE.Mesh(islandGeo, rockMat);
+    rock.name = 'island:rock';
+    rock.castShadow = rock.receiveShadow = true;
+    island.add(rock);
+    root.add(base, floor, island);
+  } else {
+    // the shelf: base, snowy floor, the island's rock and the silver collar
+    // as one coarse vertex-coloured mesh (one draw call)
+    const bag = new GeoBag();
+    bag.add(baseGeo, null, 'rock');
+    bag.add(floorGeo, null, 'rock');
+    bag.add(shelfIslandColors(islandGeo), mat(0, G.islandY, 0), 'rock');
+    // (darker than the silver itself: a plain material can't mirror the dim room)
+    bag.add(collarGeometry(4, 32), null, 'rock', '#5a5d63');
+    const ground = bag.build({ rock: kit.standard({ vertexColors: true, roughness: 0.6, metalness: 0.12, envMapIntensity: 1.4 }) }, { name: 'globe' }).children[0];
+    ground.name = 'globe:rock';
+    root.add(ground, island);
+  }
 
   progress(0.25, 'growing the crystals');
-  const crystals = buildCrystals(kit, anchors, { lod });
+  const crystals = buildCrystals(kit, anchors, { lod, underY: G.islandY });
   root.add(crystals.group);
   island.add(crystals.under);
   await ctx.step();
@@ -97,11 +149,13 @@ export async function createGlobe(ctx, { lod = 'hero' } = {}) {
   const water = buildWater(kit, { lod });
   island.add(water.group);
   if (water.foam) island.add(water.foam.mesh);
-  root.add(water.mist.mesh);
-  // lanterns: warm glows (island space)
-  const lights = new BulbString({ radius: 0.12, glow: 1.4, detail: hero ? 1 : 0 });
-  town.lanterns.forEach((p, i) => lights.add(p, 0, i, town.lanterns.length, '#ffc070'));
-  island.add(lights.build(kit));
+  if (water.mist) root.add(water.mist.mesh);
+  // lanterns: warm glows (island space; too small for the shelf, where the lit windows do)
+  const lights = hero ? new BulbString({ radius: 0.12, glow: 1.4, detail: 1 }) : null;
+  if (lights) {
+    town.lanterns.forEach((p, i) => lights.add(p, 0, i, town.lanterns.length, '#ffc070'));
+    island.add(lights.build(kit));
+  }
   // little string lights along some eaves
   const fairy = town.fairy.length ? new BulbString({ radius: 0.045, glow: 0.42, detail: 0 }) : null;
   if (fairy) {
@@ -119,8 +173,9 @@ export async function createGlobe(ctx, { lod = 'hero' } = {}) {
   const perches = town.perches.map((p) => ({ ...p, p: p.p.clone().add(new THREE.Vector3(0, G.islandY, 0)) }));
   // the town's height map (island-local) lifted into asset space, for flight avoidance
   const heightAt = (x, z, dilated = true) => G.islandY + town.heightAt(x, z, dilated);
-  const dragons = await buildDragons(ctx, kit, { lod, perches, heightAt });
-  root.add(dragons.group);
+  // (on the shelf a dragon would be a centimetre speck: left out)
+  const dragons = hero ? await buildDragons(ctx, kit, { lod, perches, heightAt }) : null;
+  if (dragons) root.add(dragons.group);
   await ctx.step();
 
   // -------------------------------------------------------- snow + glass
@@ -129,11 +184,28 @@ export async function createGlobe(ctx, { lod = 'hero' } = {}) {
   root.add(snow.mesh);
   const glass = buildGlass(kit, { lod });
   root.add(glass.group);
-  // the key crystal's grab target
-  const keyProxy = new THREE.Mesh(new THREE.SphereGeometry(8, 8, 6), new THREE.MeshBasicMaterial({ visible: false }));
-  keyProxy.name = 'proxy:key-crystal';
-  if (anchors.key) keyProxy.position.set(anchors.key.p[0], anchors.key.p[1] + 3, anchors.key.p[2] + 2);
-  root.add(keyProxy);
+  // the key crystal's grab target (only the one on the table is wound by hand)
+  const keyProxy = hero ? new THREE.Mesh(new THREE.SphereGeometry(8, 8, 6), new THREE.MeshBasicMaterial({ visible: false })) : null;
+  if (keyProxy) {
+    keyProxy.name = 'proxy:key-crystal';
+    if (anchors.key) keyProxy.position.set(anchors.key.p[0], anchors.key.p[1] + 3, anchors.key.p[2] + 2);
+    root.add(keyProxy);
+  }
+
+  // the carved trim's level of detail (see TRIM_LOD); its bounding sphere is
+  // island-local (the town group sits at the island's origin)
+  const trimSphere = town.trim.length ? town.trim.reduce((s, m) => (s ? s.union(m.geometry.boundingSphere) : m.geometry.boundingSphere.clone()), null) : null;
+  const trimCentre = new THREE.Vector3();
+  let trimOn = false;
+  let trimAngle = 0; // the last angle measured (radians), for inspection
+  // the first frame the island is drawn, the trim is drawn too (unculled), so
+  // its buffers go up to the GPU with the rest of the town, not as a hitch
+  // the first time someone leans in
+  let trimPrime = trimSphere ? 'pending' : 'done';
+  const setTrim = (on) => {
+    trimOn = on;
+    for (const m of town.trim) m.visible = on;
+  };
 
   // ---------------------------------------------------------------- state
   const state = {
@@ -149,10 +221,35 @@ export async function createGlobe(ctx, { lod = 'hero' } = {}) {
   const events = new Emitter();
   let noteIdx = 0;
   let lastTinkle = 0;
-  dragons.events.onPuff = (d, flame) => events.emit('sfx', { name: flame ? 'roar' : 'puff', pitch: d.i ? 1.15 : 0.95 });
+  if (dragons) dragons.events.onPuff = (d, flame) => events.emit('sfx', { name: flame ? 'roar' : 'puff', pitch: d.i ? 1.15 : 0.95 });
 
   // inspection hooks (tests and the Quest tour)
-  const debug = { dragons: dragons.dragons, perches, snow, simulateDragons: dragons.simulate, heightAt, houses: town.houseList, snowmen: town.snowmen, island, uniforms: U, folk, town, freezeDragons: false, freezeTown: false };
+  const debug = {
+    dragons: dragons?.dragons ?? [],
+    perches,
+    snow,
+    simulateDragons: dragons?.simulate ?? (() => {}),
+    heightAt,
+    houses: town.houseList,
+    snowmen: town.snowmen,
+    island,
+    uniforms: U,
+    folk,
+    town,
+    freezeDragons: false,
+    freezeTown: false,
+    /** the carved trim: its meshes, whether it is showing, its island-local bounding sphere */
+    trim: {
+      meshes: town.trim,
+      sphere: trimSphere,
+      get on() {
+        return trimOn;
+      },
+      get angle() {
+        return trimAngle;
+      },
+    },
+  };
 
   // ------------------------------------------------------- assembly script
   const timeline = new Timeline();
@@ -211,7 +308,7 @@ export async function createGlobe(ctx, { lod = 'hero' } = {}) {
   }
 
   // --------------------------------------------------------- interactions
-  const interactions = [
+  const interactions = !hero ? [] : [
     {
       id: 'wind',
       label: 'Turn the key crystal',
@@ -292,7 +389,7 @@ export async function createGlobe(ctx, { lod = 'hero' } = {}) {
     const settled = Math.min(1, snow.onIsland / 220);
     U.uSnow.value += (0.3 + settled * 0.6 - U.uSnow.value) * Math.min(1, dt * 0.3);
 
-    if (!debug.freezeDragons) dragons.update(dt, state.time, { startle: state.agitation });
+    if (dragons && !debug.freezeDragons) dragons.update(dt, state.time, { startle: state.agitation });
     snow.update(dt, state.time, state.agitation);
     if (!debug.freezeTown) town.update(state.time, dt, state.speed);
     // the townsfolk come out and the fires are lit once the town has risen
@@ -306,8 +403,28 @@ export async function createGlobe(ctx, { lod = 'hero' } = {}) {
     water.update(state.time, dt);
     crystals.update(state.time);
     glass.update(state.time, state.night);
-    lights.update(state.time, 0.02);
+    lights?.update(state.time, 0.02);
     fairy?.update(state.time, 0.04);
+
+    // the carved trim: shown only when it is big enough to make out
+    if (trimPrime !== 'done' && view.cameraLocal) {
+      if (trimPrime === 'pending' && island.visible) {
+        for (const m of town.trim) {
+          m.visible = true;
+          m.frustumCulled = false;
+        }
+        trimPrime = 'drawn';
+      } else if (trimPrime === 'drawn') {
+        for (const m of town.trim) m.frustumCulled = true;
+        setTrim(trimOn);
+        trimPrime = 'done';
+      }
+    } else if (trimSphere && view.cameraLocal) {
+      trimCentre.copy(trimSphere.center).add(island.position);
+      const d = Math.max(1e-6, view.cameraLocal.distanceTo(trimCentre) - trimSphere.radius);
+      trimAngle = TRIM_LOD.size / d;
+      if (trimOn ? trimAngle < TRIM_LOD.hide : trimAngle > TRIM_LOD.show) setTrim(!trimOn);
+    }
   }
 
   update(0);
