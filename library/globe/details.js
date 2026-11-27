@@ -2,6 +2,44 @@ import * as THREE from 'three';
 import { mat } from '../core/geometry.js';
 import { tileUV } from './townTextures.js';
 
+const FACES = ['+x', '-x', '+y', '-y', '+z', '-z'];
+
+/**
+ * A BoxGeometry without the faces that can never be seen (named in `cull`,
+ * e.g. '-z+y': the one flush against the wall, one buried in a neighbour).
+ * Only the index changes, so it is still a BoxGeometry to worldUV.
+ */
+export function cullBox(w, h, d, cull = '') {
+  const g = new THREE.BoxGeometry(w, h, d);
+  if (!cull) return g;
+  const src = g.index.array, keep = [];
+  // BoxGeometry lists its faces in FACES order, two triangles each
+  FACES.forEach((f, i) => {
+    if (!cull.includes(f)) for (let k = 0; k < 6; k++) keep.push(src[i * 6 + k]);
+  });
+  g.setIndex(keep);
+  g.clearGroups();
+  return g;
+}
+
+/**
+ * A box whose front and back faces show one carpentry tile of the facade
+ * atlas (townTextures.js, row 4) and whose edges show plain wood, for the
+ * 'walls' material (tinted by vertex colour).
+ */
+function atlasBox(w, h, d, kind) {
+  const g = new THREE.BoxGeometry(w, h, d);
+  const uv = g.attributes.uv;
+  const [u0, v0, u1, v1] = tileUV(kind, 4);
+  const [p0, q0, p1, q1] = tileUV(2, 4);
+  for (let i = 0; i < uv.count; i++) {
+    const face = Math.floor(i / 4);
+    if (face >= 4) uv.setXY(i, u0 + uv.getX(i) * (u1 - u0), v0 + uv.getY(i) * (v1 - v0));
+    else uv.setXY(i, p0 + (0.4 + uv.getX(i) * 0.2) * (p1 - p0), q0 + (0.4 + uv.getY(i) * 0.2) * (q1 - q0));
+  }
+  return g;
+}
+
 /**
  * Carved detail for the town, sized to read when the globe is blown up to
  * the size of a carousel ride: real window frames, sills, shutters and
@@ -33,8 +71,8 @@ export function makeDetailer(bag, rnd, { hero = true, trim = bag } = {}) {
   const chimneys = [];
   const fairy = []; // { p, color } little string lights along some eaves
 
-  /** a box of trim from its size, placed by the frame m then a local offset */
-  const box = (m, w, h, d, x, y, z, key, color, attrs, rx = 0, ry = 0, rz = 0) => trim.add(new THREE.BoxGeometry(w, h, d), m.clone().multiply(mat(x, y, z, rx, ry, rz)), key, color, attrs);
+  /** a box of trim from its size, placed by the frame m then a local offset (less the faces in cull) */
+  const box = (m, w, h, d, x, y, z, key, color, attrs, rx = 0, ry = 0, rz = 0, cull = '') => trim.add(cullBox(w, h, d, cull), m.clone().multiply(mat(x, y, z, rx, ry, rz)), key, color, attrs);
   /** the same for a structural piece (big enough to read from the table) */
   const panel = (m, w, h, d, x, y, z, key, color, attrs, rx = 0, ry = 0, rz = 0) => bag.add(new THREE.BoxGeometry(w, h, d), m.clone().multiply(mat(x, y, z, rx, ry, rz)), key, color, attrs);
 
@@ -53,18 +91,15 @@ export function makeDetailer(bag, rnd, { hero = true, trim = bag } = {}) {
       const top = h * (1 - 64 / S);
       const cx = len / 2, cy = top - wh / 2;
       const fw = 0.07;
-      // a deep frame, with a dark reveal inside it so the window looks set in
-      box(f, ww + 2 * fw, fw, 0.13, cx, top + fw / 2, 0.06, 'wood', trimColor, attrs);
-      box(f, fw, wh, 0.13, cx - ww / 2 - fw / 2, cy, 0.06, 'wood', trimColor, attrs);
-      box(f, fw, wh, 0.13, cx + ww / 2 + fw / 2, cy, 0.06, 'wood', trimColor, attrs);
-      box(f, ww, 0.03, 0.1, cx, top - 0.015, 0.05, 'wood', '#2a2018', attrs);
-      for (const s of [-1, 1]) box(f, 0.03, wh, 0.1, cx + s * (ww / 2 - 0.015), cy, 0.05, 'wood', '#2a2018', attrs);
-      // mullion cross
-      box(f, 0.035, wh, 0.03, cx, cy, out - 0.01, 'wood', trimColor, attrs);
-      box(f, ww, 0.035, 0.03, cx, top - wh * 0.45, out - 0.01, 'wood', trimColor, attrs);
+      // a deep frame, its sides standing on the sill (the dark reveal inside it
+      // and the mullion cross are in the facade atlas: painted, and in its relief)
+      const sideH = wh + 0.025;
+      box(f, ww + 2 * fw, fw, 0.13, cx, top + fw / 2, 0.06, 'wood', trimColor, attrs, 0, 0, 0, '-z');
+      box(f, fw, sideH, 0.13, cx - ww / 2 - fw / 2, top - sideH / 2, 0.06, 'wood', trimColor, attrs, 0, 0, 0, '-z+y-y');
+      box(f, fw, sideH, 0.13, cx + ww / 2 + fw / 2, top - sideH / 2, 0.06, 'wood', trimColor, attrs, 0, 0, 0, '-z+y-y');
       // sill (snow collects on it) and, for stone, a keystone lintel
-      box(f, ww + 0.3, 0.07, 0.2, cx, top - wh - 0.06, 0.09, 'stone', style === 1 ? '#a8a196' : trimColor, attrs);
-      if (style === 1) box(f, ww + 0.34, 0.16, 0.1, cx, top + 0.13, 0.05, 'stone', '#9a948a', attrs);
+      box(f, ww + 0.3, 0.07, 0.2, cx, top - wh - 0.06, 0.09, 'stone', style === 1 ? '#a8a196' : trimColor, attrs, 0, 0, 0, '-z');
+      if (style === 1) box(f, ww + 0.34, 0.16, 0.1, cx, top + 0.13, 0.05, 'stone', '#9a948a', attrs, 0, 0, 0, '-z');
       // shutters, swung half open
       if (style !== 1 && !back) {
         const sw = ww * 0.42;
@@ -72,7 +107,8 @@ export function makeDetailer(bag, rnd, { hero = true, trim = bag } = {}) {
           const hx = cx + s * (ww / 2 + fw);
           const open = 0.5 + rnd() * 0.5;
           const sh = f.clone().multiply(mat(hx, cy, 0.04, 0, -s * open, 0));
-          panel(sh, sw, wh + 0.04, 0.035, (s * sw) / 2, 0, 0, 'wood', house.shutter, attrs);
+          // louvred, from the facade atlas's carpentry row
+          bag.add(atlasBox(sw, wh + 0.04, 0.035, 1), sh.clone().multiply(mat((s * sw) / 2, 0, 0)), 'walls', house.shutter, attrs);
         }
       }
       // a balcony under the middle front window of the first floor
@@ -91,29 +127,28 @@ export function makeDetailer(bag, rnd, { hero = true, trim = bag } = {}) {
         // a flower box of winter greens now and then
         box(f, ww + 0.1, 0.2, 0.2, cx, top - wh - 0.2, 0.15, 'wood', '#5a3a24', attrs);
         box(f, ww - 0.02, 0.1, 0.16, cx, top - wh - 0.06, 0.15, 'wood', '#2f5a38', attrs);
-        for (let k = 0; k < 5; k++) trim.add(new THREE.IcosahedronGeometry(0.035, 0), f.clone().multiply(mat(cx - ww / 2 + 0.1 + (k * (ww - 0.2)) / 4, top - wh + 0.0, 0.15 + (rnd() - 0.5) * 0.08)), 'wood', '#a8202a', attrs);
+        for (let k = 0; k < 5; k++) trim.add(new THREE.OctahedronGeometry(0.04, 0), f.clone().multiply(mat(cx - ww / 2 + 0.1 + (k * (ww - 0.2)) / 4, top - wh + 0.0, 0.15 + (rnd() - 0.5) * 0.08)), 'wood', '#a8202a', attrs);
       }
     } else if (kind === 0) {
       const dw = (len * 84) / S, dh = (h * 150) / S;
       const cx = len / 2, base = (h * 16) / S;
       // stone surround and a step
-      box(f, 0.12, dh + 0.1, 0.1, cx - dw / 2 - 0.06, base + dh / 2, out, 'stone', '#a8a196', attrs);
-      box(f, 0.12, dh + 0.1, 0.1, cx + dw / 2 + 0.06, base + dh / 2, out, 'stone', '#a8a196', attrs);
-      box(f, dw + 0.44, 0.16, 0.12, cx, base + dh + 0.1, out, 'stone', '#9a948a', attrs);
+      box(f, 0.12, dh + 0.1, 0.1, cx - dw / 2 - 0.06, base + dh / 2, out, 'stone', '#a8a196', attrs, 0, 0, 0, '-z+y');
+      box(f, 0.12, dh + 0.1, 0.1, cx + dw / 2 + 0.06, base + dh / 2, out, 'stone', '#a8a196', attrs, 0, 0, 0, '-z+y');
+      box(f, dw + 0.44, 0.16, 0.12, cx, base + dh + 0.1, out, 'stone', '#9a948a', attrs, 0, 0, 0, '-z');
       panel(f, dw + 0.5, 0.18, 0.45, cx, 0.02, 0.22, 'stone', '#8a847a', attrs);
-      // the door itself, set in, with planks and a ring
-      panel(f, dw, dh * 0.82, 0.05, cx, base + dh * 0.41, 0.01, 'wood', house.door, attrs);
-      for (let k = 1; k < 4; k++) box(f, 0.02, dh * 0.8, 0.02, cx - dw / 2 + (k * dw) / 4, base + dh * 0.41, 0.04, 'wood', '#2a1a10', attrs);
+      // the door itself, set in: planks, iron straps and a ring pull from the facade atlas
+      bag.add(atlasBox(dw, dh * 0.82, 0.05, 0), f.clone().multiply(mat(cx, base + dh * 0.41, 0.01)), 'walls', house.door, attrs);
       // a little pitched hood over the door
       const hood = f.clone().multiply(mat(cx, base + dh + 0.32, 0.32));
       for (const s of [-1, 1]) panel(hood, dw * 0.62 + 0.25, 0.06, 0.72, s * (dw * 0.3 + 0.08), 0, 0, 'roof', house.roof, attrs, 0, 0, -s * 0.55);
       for (const s of [-1, 1]) box(f, 0.05, 0.05, 0.5, cx + s * (dw / 2 + 0.2), base + dh + 0.05, 0.25, 'wood', '#3a2618', attrs, -0.7);
       // a wreath on the door, and a garland swagged over it
       if (rnd() < 0.7) {
-        trim.add(new THREE.TorusGeometry(0.15, 0.05, 6, 14), f.clone().multiply(mat(cx, base + dh * 0.62, 0.08)), 'wood', '#24502e', attrs);
+        trim.add(new THREE.TorusGeometry(0.15, 0.05, 5, 12), f.clone().multiply(mat(cx, base + dh * 0.62, 0.08)), 'wood', '#24502e', attrs);
         for (let k = 0; k < 6; k++) {
           const a = (k / 6) * Math.PI * 2;
-          trim.add(new THREE.IcosahedronGeometry(0.022, 0), f.clone().multiply(mat(cx + Math.cos(a) * 0.15, base + dh * 0.62 + Math.sin(a) * 0.15, 0.12)), 'wood', '#b8202a', attrs);
+          trim.add(new THREE.OctahedronGeometry(0.026, 0), f.clone().multiply(mat(cx + Math.cos(a) * 0.15, base + dh * 0.62 + Math.sin(a) * 0.15, 0.12)), 'wood', '#b8202a', attrs);
         }
         box(f, 0.12, 0.07, 0.03, cx, base + dh * 0.62 + 0.17, 0.12, 'wood', '#b8202a', attrs);
       }
@@ -138,7 +173,7 @@ export function makeDetailer(bag, rnd, { hero = true, trim = bag } = {}) {
       const y = a[1] + (b[1] - a[1]) * t - Math.sin(t * Math.PI) * sag;
       const x = a[0] + (b[0] - a[0]) * t, z = a[2] + (b[2] - a[2]) * t;
       trim.add(new THREE.IcosahedronGeometry(0.05 + rnd() * 0.015, 0), f.clone().multiply(mat(x, y, z, rnd() * 3, rnd() * 3, 0)), 'wood', rnd() < 0.5 ? '#24502e' : '#1d4428', attrs);
-      if (k % 3 === 1) trim.add(new THREE.IcosahedronGeometry(0.02, 0), f.clone().multiply(mat(x, y - 0.04, z + 0.04)), 'wood', '#c0202a', attrs);
+      if (k % 3 === 1) trim.add(new THREE.OctahedronGeometry(0.024, 0), f.clone().multiply(mat(x, y - 0.04, z + 0.04)), 'wood', '#c0202a', attrs);
     }
   }
 
@@ -147,9 +182,10 @@ export function makeDetailer(bag, rnd, { hero = true, trim = bag } = {}) {
     if (!hero || !BEAM[style]) return;
     const c = BEAM[style];
     const t = 0.13, d = 0.06, z = 0.03;
-    box(f, len + 0.02, 0.12, d, len / 2, h - 0.05, z, 'wood', c, attrs);
-    box(f, len + 0.02, 0.16, d, len / 2, 0.08, z, 'wood', c, attrs);
-    for (let b = 0; b <= bays; b++) box(f, t, h, d, (len * b) / bays, h / 2, z, 'wood', c, attrs);
+    box(f, len + 0.02, 0.12, d, len / 2, h - 0.05, z, 'wood', c, attrs, 0, 0, 0, '-z');
+    box(f, len + 0.02, 0.16, d, len / 2, 0.08, z, 'wood', c, attrs, 0, 0, 0, '-z');
+    // (the posts' ends meet the beams of the storeys above and below)
+    for (let b = 0; b <= bays; b++) box(f, t, h, d, (len * b) / bays, h / 2, z, 'wood', c, attrs, 0, 0, 0, '-z+y-y');
     if (upper) {
       // braces from the sill beam up to the posts, either side of each window
       for (let b = 0; b < bays; b++) {
@@ -157,8 +193,8 @@ export function makeDetailer(bag, rnd, { hero = true, trim = bag } = {}) {
         const bw = x1 - x0;
         const dx = bw * 0.22, dy = h * 0.45;
         const L = Math.hypot(dx, dy), a = Math.atan2(dx, dy);
-        box(f, 0.1, L, d, x0 + t / 2 + dx / 2, 0.16 + dy / 2, z, 'wood', c, attrs, 0, 0, -a);
-        box(f, 0.1, L, d, x1 - t / 2 - dx / 2, 0.16 + dy / 2, z, 'wood', c, attrs, 0, 0, a);
+        box(f, 0.1, L, d, x0 + t / 2 + dx / 2, 0.16 + dy / 2, z, 'wood', c, attrs, 0, 0, -a, '-z');
+        box(f, 0.1, L, d, x1 - t / 2 - dx / 2, 0.16 + dy / 2, z, 'wood', c, attrs, 0, 0, a, '-z');
       }
     }
   }
@@ -204,7 +240,8 @@ export function makeDetailer(bag, rnd, { hero = true, trim = bag } = {}) {
           const cur = wireAt(k / steps);
           const mid = prev.clone().add(cur).multiplyScalar(0.5);
           const d = cur.clone().sub(prev);
-          const seg = new THREE.CylinderGeometry(0.012, 0.012, d.length() + 0.004, 4);
+          // (three sides and no end caps: it is 2.4 cm thick, and the segments meet end to end)
+          const seg = new THREE.CylinderGeometry(0.012, 0.012, d.length() + 0.004, 3, 1, true);
           seg.rotateZ(-Math.atan2(d.x, d.y));
           trim.add(seg, fr.clone().multiply(mat(mid.x, mid.y, mid.z)), 'wood', '#1a1816', attrs);
           prev = cur;
@@ -221,7 +258,8 @@ export function makeDetailer(bag, rnd, { hero = true, trim = bag } = {}) {
         if (rnd() < 0.3) continue;
         const x = -len / 2 - ohg + ((k + 0.3 + rnd() * 0.4) / n) * (len + 2 * ohg);
         const il = 0.15 + rnd() * rnd() * 0.75;
-        const ic = new THREE.ConeGeometry(0.045 + rnd() * 0.03, il, 5).rotateX(Math.PI);
+        // (open: its base is up inside the roof slab)
+        const ic = new THREE.ConeGeometry(0.045 + rnd() * 0.03, il, 5, 1, true).rotateX(Math.PI);
         trim.add(ic, fr.clone().multiply(mat(x, -drop + 0.03 - il / 2, ez + sgn * 0.03)), 'ice', undefined, attrs);
       }
     }

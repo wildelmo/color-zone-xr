@@ -2,8 +2,8 @@ import * as THREE from 'three';
 import { GeoBag, lathe, mat } from '../core/geometry.js';
 import { mulberry32 } from '../core/random.js';
 import { T, STREETS, edgeR, topHeight, angDist, terraceOf, streetMask } from './terrain.js';
-import { facadeAtlas, tileUV, roofTiles, stoneBlocks, woodGrain, roseWindow, signAtlas } from './townTextures.js';
-import { makeDetailer, houseLook } from './details.js';
+import { ATLAS, facadeAtlas, tileUV, roofTiles, stoneBlocks, woodGrain, roseWindow, signAtlas } from './townTextures.js';
+import { makeDetailer, houseLook, cullBox } from './details.js';
 import { buildFlags } from './flags.js';
 
 /**
@@ -71,9 +71,11 @@ const TOWER_ROOFS = ['#3f5a8a', '#8a2e2e', '#2f6a5a', '#5a3a6a'];
 export async function buildTown(kit, uniforms, { lod = 'hero', seed = 11, step = null } = {}) {
   const hero = lod === 'hero';
   const rnd = mulberry32(seed);
-  const atlas = facadeAtlas();
+  // (the hero's façades get the relief too, made a band at a time on first use)
+  const atlas = await facadeAtlas({ relief: hero, step });
   kit.trackTexture(atlas.map);
   kit.trackTexture(atlas.emissive);
+  if (atlas.normal) kit.trackTexture(atlas.normal);
   // (made a piece at a time on first use, then remembered)
   const roofTex = roofTiles();
   if (step) await step();
@@ -88,7 +90,8 @@ export async function buildTown(kit, uniforms, { lod = 'hero', seed = 11, step =
   const rose = kit.trackTexture(roseWindow());
   const signs = kit.trackTexture(signAtlas());
   const mats = {
-    walls: townMaterial(kit, { map: atlas.map, emissiveMap: atlas.emissive, emissive: 0xffffff, emissiveIntensity: 1.4, roughness: 0.8 }, uniforms),
+    // (in the hero the doors and shutters are walls too, from the atlas's carpentry row, tinted by vertex colour)
+    walls: townMaterial(kit, { map: atlas.map, emissiveMap: atlas.emissive, emissive: 0xffffff, emissiveIntensity: 1.4, roughness: 0.8, ...(hero ? { normalMap: atlas.normal, normalScale: new THREE.Vector2(1, 1), vertexColors: true } : {}) }, uniforms),
     roof: townMaterial(kit, { map: roofTex.map, normalMap: roofTex.normal, normalScale: new THREE.Vector2(1, 1), vertexColors: true, roughness: 0.65 }, uniforms, { snow: false }),
     stone: townMaterial(kit, { map: stoneTex.map, normalMap: stoneTex.normal, normalScale: new THREE.Vector2(1.2, 1.2), vertexColors: true, roughness: 0.85 }, uniforms),
     wood: townMaterial(kit, { map: woodTex.map, normalMap: woodTex.normal, normalScale: new THREE.Vector2(0.6, 0.6), vertexColors: true, roughness: 0.72 }, uniforms),
@@ -403,8 +406,8 @@ export async function buildTown(kit, uniforms, { lod = 'hero', seed = 11, step =
       bag.add(new THREE.BoxGeometry(len, 0.22, 0.2), mat(cp.x, wallTop - 0.12, cp.z, 0, yaw), 'stone', '#968f84', { build, lit: 2 });
       if (i % 3 === 0 && !overRavine) {
         const sp = mid.clone().addScaledVector(out, 0.56);
-        trim.add(new THREE.BoxGeometry(0.16, 1.0, 0.06), mat(sp.x, wallTop - 1.7, sp.z, 0, yaw), 'stone', '#2a2622', { build, lit: 2 });
-        trim.add(new THREE.BoxGeometry(0.5, 0.12, 0.08), mat(sp.x, wallTop - 1.7, sp.z, 0, yaw), 'stone', '#2a2622', { build, lit: 2 });
+        trim.add(cullBox(0.16, 1.0, 0.06, '+z'), mat(sp.x, wallTop - 1.7, sp.z, 0, yaw), 'stone', '#2a2622', { build, lit: 2 });
+        trim.add(cullBox(0.5, 0.12, 0.08, '+z'), mat(sp.x, wallTop - 1.7, sp.z, 0, yaw), 'stone', '#2a2622', { build, lit: 2 });
       }
     }
     // (battlements are lost on the shelf)
@@ -416,7 +419,7 @@ export async function buildTown(kit, uniforms, { lod = 'hero', seed = 11, step =
         // a capstone on each merlon (snow settles on it) and a slit through it
         bag.add(new THREE.BoxGeometry(0.7, 0.09, 0.44), mat(p.x, wallTop + 0.74, p.z, 0, yaw), 'stone', '#968f84', { build, lit: 2 });
         const sp = p.clone().addScaledVector(out, 0.18);
-        trim.add(new THREE.BoxGeometry(0.07, 0.36, 0.02), mat(sp.x, wallTop + 0.38, sp.z, 0, yaw), 'stone', '#1e1b18', { build, lit: 2 });
+        trim.add(cullBox(0.07, 0.36, 0.02, '+z'), mat(sp.x, wallTop + 0.38, sp.z, 0, yaw), 'stone', '#1e1b18', { build, lit: 2 });
       }
     }
   }
@@ -480,7 +483,7 @@ export async function buildTown(kit, uniforms, { lod = 'hero', seed = 11, step =
       const tip0 = cb + r * 2.4;
       bag.add(lathe([[0, 0], [0.12, 0], [0.18, 0.2], [0.09, 0.4], [0, 0.42]], 10), mat(x, tip0, z), 'gold', undefined, { build, lit: 2 });
       bag.add(new THREE.CylinderGeometry(0.055, 0.07, 1.6, 8), mat(x, tip0 + 0.3 + 0.8, z), 'gold', undefined, { build, lit: 2 });
-      trim.add(new THREE.SphereGeometry(0.1, 10, 8), mat(x, tip0 + 1.95, z), 'gold', undefined, { build, lit: 2 });
+      trim.add(new THREE.SphereGeometry(0.1, 8, 6), mat(x, tip0 + 1.95, z), 'gold', undefined, { build, lit: 2 });
       flagSpecs.push({ p: new THREE.Vector3(x, tip0 + 1.82, z), along: WIND, across: DOWN, len: 1.15, wid: 0.5, colors: [roofCol, '#e8d8a0'], pattern: 'pennant', phase: drnd() * 6 });
     } else if (hero) {
       bag.add(lathe([[0, 0], [0.12, 0], [0.18, 0.2], [0.05, 0.4], [0.03, 1.4], [0, 1.45]], 8), mat(x, cb + r * 2.4, z), 'gold', undefined, { build, lit: 2 });
@@ -492,10 +495,12 @@ export async function buildTown(kit, uniforms, { lod = 'hero', seed = 11, step =
         const [u0, v0, u1, v1] = tileUV(1, 3);
         const q = new THREE.PlaneGeometry(0.5, 0.9);
         const uv = q.attributes.uv;
-        uv.setXY(0, u0 + 0.06, v1 - 0.06);
-        uv.setXY(1, u1 - 0.06, v1 - 0.06);
-        uv.setXY(2, u0 + 0.06, v0 + 0.06);
-        uv.setXY(3, u1 - 0.06, v0 + 0.06);
+        // (the same share of the tile whatever the atlas's row count)
+        const iv = (0.06 * 4) / ATLAS.rows;
+        uv.setXY(0, u0 + 0.06, v1 - iv);
+        uv.setXY(1, u1 - 0.06, v1 - iv);
+        uv.setXY(2, u0 + 0.06, v0 + iv);
+        uv.setXY(3, u1 - 0.06, v0 + iv);
         bag.add(q, mat(x + Math.cos(a) * (r + 0.02), g0 + h * (0.45 + k * 0.15), z + Math.sin(a) * (r + 0.02), 0, Math.PI / 2 - a), 'walls', undefined, { build, lit: 0.2 + rnd() * 0.6 });
       }
     }
@@ -652,7 +657,7 @@ export async function buildTown(kit, uniforms, { lod = 'hero', seed = 11, step =
         if (hero) {
           // a stone surround with a hood moulding over each window
           const wm = mat(cx + ox, g0 + 4 + f * 3.4, cz + oz, 0, yaw);
-          const wb = (w, h, d, x, y, z) => trim.add(new THREE.BoxGeometry(w, h, d), wm.clone().multiply(mat(x, y, z)), 'stone', '#b5ae9f', { build, lit: 2 });
+          const wb = (w, h, d, x, y, z) => trim.add(cullBox(w, h, d, '-z'), wm.clone().multiply(mat(x, y, z)), 'stone', '#b5ae9f', { build, lit: 2 });
           // (the painted window spans y -0.65..0.75 and x +-0.45 of the tile)
           wb(1.25, 0.16, 0.22, 0, 0.9, 0.05);
           wb(1.2, 0.12, 0.3, 0, -0.74, 0.1);
