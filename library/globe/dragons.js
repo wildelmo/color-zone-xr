@@ -81,6 +81,8 @@ export async function buildDragons(ctx, kit, { lod, perches, heightAt = () => -1
     outerMem: inst(wing.outer.membrane, mats.membrane, N * 2, 'dragon:wing2', (i) => LIVERY[i >> 1].wing),
     outerBone: inst(wing.outer.bones, mats.bones, N * 2, 'dragon:wingbone2', (i) => LIVERY[i >> 1].spikes),
   };
+  // the eyes sit inside the head's silhouette: their shadow is the head's
+  meshes.eyes.castShadow = false;
 
   // flame / smoke puffs
   const fx = new GlowPoints(kit, 80, { additive: true, soft: 0.8, name: 'dragon:breath' });

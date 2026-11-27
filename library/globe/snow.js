@@ -11,7 +11,7 @@ import { edgeR, topHeight } from './terrain.js';
  */
 export function buildSnow(kit, { lod }) {
   const hero = lod === 'hero';
-  const N = hero ? 2600 : 500;
+  const N = hero ? 2600 : 80;
   const pts = new GlowPoints(kit, N, { additive: false, soft: 0.6, core: 1.0, name: 'snow', renderOrder: 9 });
   const P = new Float32Array(N * 3), V = new Float32Array(N * 3), S = new Float32Array(N), R = new Uint8Array(N), ph = new Float32Array(N);
   const C = new THREE.Vector3(0, G.globeY, 0);

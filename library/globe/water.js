@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { GlowPoints } from '../core/glowPoints.js';
 import { T, edgeR, topHeight } from './terrain.js';
 import { G } from './dimensions.js';
@@ -48,6 +49,8 @@ export function buildWater(kit, { lod }) {
   const riverMat = flowMat(-0.8);
 
   const falls = [];
+  // (the shelf preview leaves out the rivers and draws its three falls as one mesh)
+  const shelfFalls = [];
   // the ravine river: a ribbon along the channel floor out to the cliff
   const addRiver = (angle, width, depth) => {
     const pts = [];
@@ -70,14 +73,16 @@ export function buildWater(kit, { lod }) {
     g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
     g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
     g.setIndex(idx);
-    const m = new THREE.Mesh(g, riverMat);
-    m.renderOrder = 6;
-    group.add(m);
+    if (hero) {
+      const m = new THREE.Mesh(g, riverMat);
+      m.renderOrder = 6;
+      group.add(m);
+    } else g.dispose();
     // the fall: arcs out over the lip then drops, widening and thinning
     const lip = pts[pts.length - 1];
     const out = new THREE.Vector3(Math.cos(angle), 0, Math.sin(angle));
     const fpos = [], fuv = [], fidx = [];
-    const fn = 28;
+    const fn = hero ? 28 : 10;
     const drop = 28;
     for (let i = 0; i <= fn; i++) {
       const t = i / fn;
@@ -91,17 +96,25 @@ export function buildWater(kit, { lod }) {
     fg.setAttribute('position', new THREE.Float32BufferAttribute(fpos, 3));
     fg.setAttribute('uv', new THREE.Float32BufferAttribute(fuv, 2));
     fg.setIndex(fidx);
-    const fm = new THREE.Mesh(fg, fallMat);
-    fm.renderOrder = 7;
-    group.add(fm);
+    if (hero) {
+      const fm = new THREE.Mesh(fg, fallMat);
+      fm.renderOrder = 7;
+      group.add(fm);
+    } else shelfFalls.push(fg);
     falls.push({ lip: lip.clone().addScaledVector(out, 1.4), out, width, drop });
   };
   addRiver(T.ravineA, 2.2, -0.05);
   for (const a of T.streams) addRiver(a, 0.9, 0.12);
+  if (shelfFalls.length) {
+    const fm = new THREE.Mesh(mergeGeometries(shelfFalls, false), fallMat);
+    shelfFalls.forEach((g) => g.dispose());
+    fm.renderOrder = 7;
+    group.add(fm);
+  }
 
   // mist: drifting soft puffs beneath each fall (asset space: islandY offset applied by caller)
-  const perFall = hero ? 40 : 12;
-  const mist = new GlowPoints(kit, perFall * falls.length, { additive: false, soft: 1.2, core: 0.0, opacity: 0.55, name: 'mist', renderOrder: 8 });
+  const perFall = hero ? 40 : 0;
+  const mist = perFall ? new GlowPoints(kit, perFall * falls.length, { additive: false, soft: 1.2, core: 0.0, opacity: 0.55, name: 'mist', renderOrder: 8 }) : null;
   const motes = [];
   falls.forEach((f, k) => {
     for (let i = 0; i < perFall; i++) motes.push({ f: k, t: Math.random(), seed: Math.random() * 100 });
@@ -132,7 +145,7 @@ export function buildWater(kit, { lod }) {
         const a = Math.sin(Math.PI * m.t) * (f.width > 1.5 ? 1 : 0.6);
         mist.set(i, x, y, z, 0.86, 0.92, 1.0, (2.5 + m.t * 7) * (f.width > 1.5 ? 1 : 0.6), a);
       });
-      mist.commit(motes.length);
+      mist?.commit(motes.length);
       if (foam) {
         flecks.forEach((p, i) => {
           const f = falls[p.f];
