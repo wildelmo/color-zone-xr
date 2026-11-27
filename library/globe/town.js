@@ -455,8 +455,16 @@ export async function buildTown(kit, uniforms, { lod = 'hero', seed = 11, step =
     const cu = cone.attributes.uv;
     for (let k = 0; k < cu.count; k++) cu.setXY(k, cu.getX(k) * r * 6, cu.getY(k) * r * 2);
     bag.add(cone, mat(x, cb + r * 1.2, z), 'roof', roofCol, { build, lit: 2 });
-    bag.add(lathe([[0, 0], [0.12, 0], [0.18, 0.2], [0.05, 0.4], [0.03, 1.4], [0, 1.45]], 8), mat(x, cb + r * 2.4, z), 'gold', undefined, { build, lit: 2 });
-    if (banner && hero) flagSpecs.push({ p: new THREE.Vector3(x, cb + r * 2.4 + 1.32, z), along: WIND, across: DOWN, len: 1.15, wid: 0.5, colors: [roofCol, '#e8d8a0'], pattern: 'pennant', phase: drnd() * 6 });
+    if (banner && hero) {
+      // a gilt knob on the cone's tip, a flagpole you can see, a ball on top, and the pennant flying from it
+      const tip0 = cb + r * 2.4;
+      bag.add(lathe([[0, 0], [0.12, 0], [0.18, 0.2], [0.09, 0.4], [0, 0.42]], 10), mat(x, tip0, z), 'gold', undefined, { build, lit: 2 });
+      bag.add(new THREE.CylinderGeometry(0.055, 0.07, 1.6, 8), mat(x, tip0 + 0.3 + 0.8, z), 'gold', undefined, { build, lit: 2 });
+      bag.add(new THREE.SphereGeometry(0.1, 10, 8), mat(x, tip0 + 1.95, z), 'gold', undefined, { build, lit: 2 });
+      flagSpecs.push({ p: new THREE.Vector3(x, tip0 + 1.82, z), along: WIND, across: DOWN, len: 1.15, wid: 0.5, colors: [roofCol, '#e8d8a0'], pattern: 'pennant', phase: drnd() * 6 });
+    } else {
+      bag.add(lathe([[0, 0], [0.12, 0], [0.18, 0.2], [0.05, 0.4], [0.03, 1.4], [0, 1.45]], 8), mat(x, cb + r * 2.4, z), 'gold', undefined, { build, lit: 2 });
+    }
     // arrow-slit windows that glow
     if (hero) {
       for (let k = 0; k < 3; k++) {
@@ -540,6 +548,7 @@ export async function buildTown(kit, uniforms, { lod = 'hero', seed = 11, step =
         const top = new THREE.Vector3(sx * 3.2, 8.3, 2.48).applyMatrix4(G2);
         const across = new THREE.Vector3(1, 0, 0).transformDirection(G2);
         gb(1.1, 0.08, 0.08, sx * 3.2, 8.32, 2.5, 'gold', undefined);
+        for (const ex of [-0.5, 0.5]) gb(0.06, 0.06, 0.3, sx * 3.2 + ex, 8.32, 2.33, 'wood', '#26221e');
         flagSpecs.push({ p: top, along: DOWN, across, len: 3.4, wid: 0.95, colors: ['#8a1f1f', '#d9a84e'], pattern: 'banner', phase: sx * 1.7 });
       }
     }
@@ -784,7 +793,13 @@ export async function buildTown(kit, uniforms, { lod = 'hero', seed = 11, step =
     for (const s of [1, -1]) bag.add(new THREE.BoxGeometry(0.3, 0.7, 7.5), bm.clone().multiply(mat(s * 1.0, 0.7, 0)), 'stone', '#a8a196', { build, lit: 2 });
     const arch = new THREE.TorusGeometry(2.6, 0.45, 6, 16, Math.PI);
     bag.add(arch, bm.clone().multiply(mat(0, -2.4, 0, 0, Math.PI / 2)), 'stone', '#968f84', { build, lit: 2 });
-    lanterns.push(new THREE.Vector3(1.0, 1.6, 3.6).applyMatrix4(bm), new THREE.Vector3(-1.0, 1.6, -3.6).applyMatrix4(bm));
+    // lamps on posts at the ends of the parapets
+    for (const [lx, lz] of [[1.0, 3.6], [-1.0, -3.6]]) {
+      bag.add(new THREE.CylinderGeometry(0.06, 0.08, 0.75, 6), bm.clone().multiply(mat(lx, 1.05 + 0.37, lz)), 'wood', '#2a2420', { build, lit: 2 });
+      bag.add(new THREE.BoxGeometry(0.32, 0.36, 0.32), bm.clone().multiply(mat(lx, 1.98, lz)), 'wood', '#2a2420', { build, lit: 2 });
+      bag.add(new THREE.ConeGeometry(0.26, 0.18, 4).rotateY(Math.PI / 4), bm.clone().multiply(mat(lx, 2.25, lz)), 'wood', '#2a2420', { build, lit: 2 });
+      lanterns.push(new THREE.Vector3(lx, 1.98, lz).applyMatrix4(bm));
+    }
     // the best place to stand at life size: on the bridge, the river below, the keep ahead
     // face along the street (the bridge deck), houses and lanterns either side
     const bp = new THREE.Vector3(0, 0.4, 1.6).applyMatrix4(bm);
@@ -798,7 +813,11 @@ export async function buildTown(kit, uniforms, { lod = 'hero', seed = 11, step =
     blockers.push({ x: gx, z: gz, r: 1.2 });
     for (const s of [1, -1]) bag.add(new THREE.BoxGeometry(0.12, 2.2, 0.12), mat(gx + s * 0.8, wy + 1.1, gz), 'wood', '#4a3020', { build: wb, lit: 2 });
     bag.add(new THREE.ConeGeometry(1.3, 0.9, 4, 1, true).rotateY(Math.PI / 4), mat(gx, wy + 2.55, gz), 'roof', '#8a4434', { build: wb, lit: 2 });
-    lanterns.push(new THREE.Vector3(gx, wy + 2.1, gz + 0.9));
+    // a lamp on an iron bracket off one of its posts
+    bag.add(new THREE.BoxGeometry(0.05, 0.05, 0.42), mat(gx + 0.8, wy + 1.95, gz + 0.21), 'wood', '#26221e', { build: wb, lit: 2 });
+    bag.add(new THREE.BoxGeometry(0.02, 0.12, 0.02), mat(gx + 0.8, wy + 1.88, gz + 0.4), 'wood', '#26221e', { build: wb, lit: 2 });
+    bag.add(new THREE.BoxGeometry(0.2, 0.26, 0.2), mat(gx + 0.8, wy + 1.7, gz + 0.4), 'wood', '#26221e', { build: wb, lit: 2 });
+    lanterns.push(new THREE.Vector3(gx + 0.8, wy + 1.7, gz + 0.4));
   }
 
   // ---------------------------------------------------------- snowy pines
@@ -958,7 +977,23 @@ export async function buildTown(kit, uniforms, { lod = 'hero', seed = 11, step =
   if (sails) group.add(sails);
 
   // lantern-bearers patrolling the outer wall walk
-  const walkers = buildWalkers(kit, uniforms, wallR, wallTop, hero ? 8 : 0);
+  // the stretches of wall-walk between towers (angles), leaving out the gate
+  const walks = [];
+  {
+    const tw = towerAngles.slice(1).map((a) => ({ a, h: (2.0 + 0.7) / wallR(a) }));
+    const gr = wallR(T.gateA) + 0.4;
+    for (const sg of [1, -1]) tw.push({ a: T.gateA + (sg * 3.2) / gr, h: (2.4 + 0.7) / gr, gate: sg });
+    const norm = (a) => ((a - T.gateA) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2);
+    tw.sort((p, q) => norm(p.a) - norm(q.a));
+    for (let k = 0; k < tw.length; k++) {
+      const p = tw[k], q = tw[(k + 1) % tw.length];
+      if (p.gate && q.gate) continue; // over the gatehouse
+      let a0 = p.a + p.h, a1 = q.a - q.h;
+      while (a1 < a0) a1 += Math.PI * 2;
+      if ((a1 - a0) * wallR(a0) > 2) walks.push([a0, a1]);
+    }
+  }
+  const walkers = buildWalkers(kit, uniforms, wallR, wallTop, hero ? 8 : 0, walks);
   if (walkers) group.add(walkers.mesh);
 
   const heights = heightGrid(obstacles);
@@ -974,6 +1009,7 @@ export async function buildTown(kit, uniforms, { lod = 'hero', seed = 11, step =
     chimneys: DT.chimneys,
     blockers,
     fairy: DT.fairy,
+    flagSpecs,
     /** where each house stands (island-local), for inspection */
     houseList: houses.map(({ x, z, w, d, y, yaw, floors, style, wallsH, roofH, sign = false, balcony = false, lights = false }) => ({ x, z, w, d, y, yaw, floors, style, wallsH, roofH, sign, balcony, lights })),
     snowmen,
@@ -1035,14 +1071,23 @@ function heightGrid(obstacles, extent = 38, dilate = 4) {
   };
 }
 
-function buildWalkers(kit, uniforms, wallR, wallTop, n) {
+function buildWalkers(kit, uniforms, wallR, wallTop, n, walks) {
   if (!n) return null;
+  // a guard of the watch: a long red surcoat over mail, a cape, a kettle
+  // helmet, a spear in one hand and a little lantern in the other
   const parts = [];
-  const body = new THREE.CylinderGeometry(0.22, 0.32, 1.1, 8).translate(0, 0.55, 0);
-  const head = new THREE.SphereGeometry(0.2, 8, 6).translate(0, 1.32, 0);
-  const hood = new THREE.ConeGeometry(0.24, 0.4, 8).translate(0, 1.55, 0);
-  const lamp = new THREE.BoxGeometry(0.16, 0.2, 0.16).translate(0.36, 0.85, 0.1);
-  for (const [g, col] of [[body, '#5a2a2a'], [head, '#f0c9a8'], [hood, '#3a2a4a'], [lamp, '#ffcc66']]) {
+  const body = new THREE.CylinderGeometry(0.2, 0.33, 1.15, 14, 2).translate(0, 0.575, 0);
+  const belt = new THREE.CylinderGeometry(0.235, 0.24, 0.07, 14).translate(0, 0.78, 0);
+  const cape = new THREE.SphereGeometry(0.26, 14, 5, 0, Math.PI * 2, 0, Math.PI / 2).translate(0, 1.16, -0.01);
+  const head = new THREE.SphereGeometry(0.16, 12, 8).translate(0, 1.38, 0.01);
+  const helm = new THREE.SphereGeometry(0.175, 12, 6, 0, Math.PI * 2, 0, Math.PI / 2).translate(0, 1.44, 0);
+  const brim = new THREE.CylinderGeometry(0.27, 0.27, 0.025, 14).translate(0, 1.44, 0);
+  const arms = [-1, 1].map((sd) => new THREE.CylinderGeometry(0.065, 0.09, 0.48, 8).translate(0, -0.24, 0).rotateX(-0.3).rotateZ(sd * 0.15).translate(sd * 0.21, 1.15, 0.02));
+  const hands = [-1, 1].map((sd) => new THREE.SphereGeometry(0.055, 6, 4).translate(sd * 0.26, 0.72, 0.17));
+  const spear = new THREE.CylinderGeometry(0.018, 0.018, 2.2, 5).translate(0.26, 1.0, 0.17);
+  const tip = new THREE.ConeGeometry(0.045, 0.2, 5).translate(0.26, 2.2, 0.17);
+  const lamp = new THREE.BoxGeometry(0.12, 0.16, 0.12).translate(-0.26, 0.56, 0.17);
+  for (const [g, col] of [[body, '#7a2424'], [belt, '#2a1a10'], [cape, '#3a2a4a'], [head, '#e8c0a0'], [helm, '#8a8e96'], [brim, '#8a8e96'], [arms[0], '#7a2424'], [arms[1], '#7a2424'], [hands[0], '#e8c0a0'], [hands[1], '#e8c0a0'], [spear, '#4a3020'], [tip, '#b8bcc4'], [lamp, '#ffcc66']]) {
     const c = new THREE.Color(col);
     const a = new Float32Array(g.attributes.position.count * 3);
     for (let i = 0; i < a.length; i += 3) a.set([c.r, c.g, c.b], i);
@@ -1073,34 +1118,41 @@ function buildWalkers(kit, uniforms, wallR, wallTop, n) {
   mesh.name = 'town:walkers';
   mesh.frustumCulled = false;
   mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-  const offsets = Array.from({ length: n }, (_, i) => ({ a: (i / n) * Math.PI * 2, v: (0.012 + (i % 3) * 0.004) * (i % 2 ? 1 : -1) }));
+  // each guard walks one stretch of wall between two towers, back and forth, pausing at the ends
+  const guards = Array.from({ length: n }, (_, i) => {
+    const [a0, a1] = walks[Math.floor((i * walks.length) / n) % walks.length];
+    return { a0, a1, a: a0 + (a1 - a0) * (0.2 + 0.6 * ((i * 0.618) % 1)), dir: i % 2 ? 1 : -1, v: 0.45 + (i % 3) * 0.12, wait: 0 };
+  });
   const mm = new THREE.Matrix4();
   const q = new THREE.Quaternion();
   const up = new THREE.Vector3(0, 1, 0);
   const sc = new THREE.Vector3(1, 1, 1);
   const p = new THREE.Vector3();
+  let last = null;
   return {
     mesh,
-    offsets,
+    guards,
     update(t) {
-      offsets.forEach((w, i) => {
-        const a = w.a + t * w.v;
-        const r = wallR(a) - 0.15;
-        p.set(Math.cos(a) * r, wallTop + Math.abs(Math.sin(t * 6 + i)) * 0.05, Math.sin(a) * r);
-        q.setFromAxisAngle(up, -a + (w.v > 0 ? 0 : Math.PI));
+      const dt = last === null ? 0 : Math.min(2, Math.max(0, t - last));
+      last = t;
+      guards.forEach((w, i) => {
+        if (w.wait > 0) w.wait -= dt;
+        else {
+          w.a += (w.dir * w.v * dt) / wallR(w.a);
+          if (w.a > w.a1 || w.a < w.a0) {
+            w.a = Math.min(w.a1, Math.max(w.a0, w.a));
+            w.dir = -w.dir;
+            w.wait = 2.5; // a look over the battlements before turning back
+          }
+        }
+        const r = wallR(w.a) - 0.15;
+        const step = w.wait > 0 ? 0 : Math.abs(Math.sin(t * 6 + i)) * 0.04;
+        p.set(Math.cos(w.a) * r, wallTop + step, Math.sin(w.a) * r);
+        q.setFromAxisAngle(up, -w.a + (w.dir > 0 ? 0 : Math.PI) + (w.wait > 0 ? Math.PI / 2 : 0));
         mm.compose(p, q, sc);
         mesh.setMatrixAt(i, mm);
       });
       mesh.instanceMatrix.needsUpdate = true;
-    },
-    lampPositions(t, out) {
-      offsets.forEach((w, i) => {
-        const a = w.a + t * w.v;
-        const r = wallR(a) - 0.15;
-        const yaw = -a + (w.v > 0 ? 0 : Math.PI);
-        const lx = 0.36, lz = 0.1;
-        out[i].set(Math.cos(a) * r + Math.cos(yaw) * lx + Math.sin(yaw) * lz, wallTop + 0.85, Math.sin(a) * r - Math.sin(yaw) * lx + Math.cos(yaw) * lz);
-      });
     },
   };
 }

@@ -93,7 +93,16 @@ function bodyRaw(x, y, z) {
 }
 
 // ------------------------------------------------------- mane, forelock, tail
-const crest = [[0.685, 0.82, 0], [0.64, 0.74, 0], [0.585, 0.66, 0], [0.53, 0.575, 0], [0.475, 0.49, 0], [0.42, 0.41, 0], [0.365, 0.34, 0], [0.31, 0.29, 0]];
+// A horse's mane grows from the crest, the top line of the neck from the
+// poll (between the ears) back to the withers, and falls to one side. So
+// the crest is found on the neck itself: the highest point of the body's
+// surface on the centre line at each step along the neck. (Guessed points
+// sat 5 to 6 cm inside the neck, leaving a bald strip down the middle.)
+function bodyTopAt(x) {
+  for (let y = 1.0; y > 0; y -= 0.002) if (bodyRaw(x, y, 0) < 0) return y;
+  return 0.3;
+}
+const crest = [0.655, 0.615, 0.572, 0.528, 0.48, 0.43, 0.38, 0.33].map((x) => [x, bodyTopAt(x) - 0.012, 0]);
 /**
  * Carved locks falling from the crest down one side of the neck.
  * side +1 is the outward "romance side" (fuller); side -1 is the inner side,
@@ -101,7 +110,8 @@ const crest = [[0.685, 0.82, 0], [0.64, 0.74, 0], [0.585, 0.66, 0], [0.53, 0.575
  */
 function makeLocks(points, side, len) {
   return points.map((c, i) => {
-    const s = (1 - i / (crest.length + 2)) * len;
+    // short at the poll, longest down the middle of the neck, a little shorter at the withers
+    const s = (0.4 + 0.6 * Math.sin((Math.PI * (i + 0.6)) / (points.length + 0.4))) * len;
     const sway = i % 2 ? 0.02 : -0.01;
     const z = (v) => side * v;
     return chain(
@@ -114,8 +124,12 @@ function makeLocks(points, side, len) {
 }
 const between = crest.slice(0, -1).map((c, i) => c.map((v, k) => (v + crest[i + 1][k]) / 2));
 const locks = [...makeLocks(crest, 1, 1), ...makeLocks(between, -1, 0.82)];
-const crestRidge = chain(crest, [0.045, 0.05, 0.05, 0.05, 0.045, 0.04, 0.035, 0.025], 0.02, 2);
-const forelock = chain([[0.705, 0.82, 0], [0.765, 0.8, 0.02], [0.8, 0.74, 0.03], [0.815, 0.69, 0.02]], [0.034, 0.03, 0.02, 0.006], 0.01, 3);
+// the crest itself, thick with hair: a ridge flattened to lie wide over the top of the neck,
+// narrowing at the poll, just behind the ears
+const crestRidge = scaleZ(chain(crest, [0.026, 0.038, 0.046, 0.048, 0.046, 0.042, 0.036, 0.026], 0.02, 2), 0.62);
+// the forelock: a flat tuft from the poll, forward between the ears, lying on the forehead
+const onForehead = (x, lift) => [x, bodyTopAt(x) + lift, 0];
+const forelock = scaleZ(chain([onForehead(0.69, -0.012), onForehead(0.73, -0.006), [0.765, bodyTopAt(0.765) - 0.004, 0.006], [0.795, bodyTopAt(0.795) - 0.008, 0.004]], [0.022, 0.02, 0.014, 0.004], 0.01, 3), 0.55);
 const tailLocks = [
   chain([[-0.62, 0.16, 0], [-0.79, 0.15, 0.02], [-0.92, 0.03, 0.035], [-0.97, -0.18, 0.05], [-0.93, -0.37, 0.04]], [0.05, 0.075, 0.07, 0.055, 0.018], 0.02, 4),
   chain([[-0.63, 0.15, 0], [-0.78, 0.12, -0.035], [-0.88, -0.01, -0.03], [-0.9, -0.2, -0.02], [-0.85, -0.32, -0.03]], [0.045, 0.06, 0.055, 0.04, 0.012], 0.02, 4),

@@ -100,6 +100,42 @@ const look = (page, target, pos) =>
   );
 
 // ------------------------------------------------------------------ desktop
+// ------------------------------------------------- the carousel horse's mane
+// (pure geometry, no browser) a mane grows from the crest, the top line of
+// the neck, and falls to the side: along the whole neck the hair must cover
+// the crest and stand proud of it, with no bare strip down the middle
+console.log("\n▶ The horses' manes");
+{
+  const { layers } = await import('../../library/carousel/horseModel.js');
+  const body = layers.body.sdf, mane = layers.mane.sdf;
+  const OXH = -0.06;
+  const top = (f, x, z) => {
+    for (let y = 1.0; y > 0; y -= 0.002) if (f(x + OXH, y, z) < 0) return y;
+    return null;
+  };
+  let bare = 0, buried = 0, n = 0;
+  for (let x = 0.34; x <= 0.62; x += 0.04) {
+    const bt = top(body, x, 0), mt = top(mane, x, 0);
+    if (mt === null || mt < bt + 0.01) buried++;
+    // across the top of the neck: hair over the body at every point of the crest band
+    for (let z = -0.06; z <= 0.061; z += 0.02) {
+      n++;
+      const b = top(body, x, z), m = top(mane, x, z);
+      if (m === null || (b !== null && m <= b + 0.003)) bare++;
+    }
+  }
+  check(buried === 0 && bare === 0, `the mane covers the crest from withers to poll (${n} points across the top of the neck: ${bare} bare, ${buried} places where the hair sinks into the neck)`);
+  // and as the carousel actually draws it: meshed at each level of detail,
+  // seen from straight above, it's hair all the way across the crest
+  const { maneCoverage } = await import('./maneCoverage.js');
+  const { HORSE_CELLS } = await import('../../library/carousel/dimensions.js');
+  for (const [level, cell] of Object.entries(HORSE_CELLS)) {
+    const r = maneCoverage(layers, cell);
+    check(r.bare === 0, `meshed at the ${level} level (cell ${cell}), the neck shows through the mane at ${r.bare} of ${r.n} points down the crest`);
+    if (r.bare) console.log(r.map.map((row) => '      ' + row).join('\n'));
+  }
+}
+
 console.log('\n▶ Desktop: boot, assemble, wind, play');
 if (want('desktop')) {
   const page = await newPage({ width: 1280, height: 800 });
@@ -448,6 +484,15 @@ if (want('globe')) {
   await page.evaluate(() => window.__xrEmu.setHead([0, 1.6, 0], window.__xrEmu.quatYawPitch(0, -0.3)));
   await page.evaluate(() => window.__xrEmu.waitFrames(6));
   await snap(page, '17-vr-up-close.png', { x: 0, y: 0, width: 800, height: 800 });
+  // the small things are attached: every light hangs from a lamp, post or wire, the guards walk on the wall, flags fly from poles
+  const fl = await page.evaluate(async () => {
+    const THREE = await import('three');
+    const { findFloaters } = await import('/tools/test/floaters.js');
+    return findFloaters(THREE, window.__cc.stage.asset.debug.town, { seconds: 300, step: 3 });
+  });
+  check(fl.lights.length === 0, `every light hangs from something (${fl.counts.lanterns} lanterns, ${fl.counts.stringLights} string lights${fl.lights.length ? `; loose: ${JSON.stringify(fl.lights.slice(0, 3))}` : ''})`);
+  check(fl.guards.floating === 0 && fl.guards.sunk === 0 && fl.guards.inTower === 0, `the guards walk on the wall-walk (${fl.guards.samples} positions: ${fl.guards.floating} on air, ${fl.guards.sunk} sunk, ${fl.guards.inTower} inside towers)`);
+  check(fl.flags.length === 0, `all ${fl.counts.flags} flags fly from their poles`);
   // five simulated minutes of dragon flight: never inside a building, never outside the glass
   const sim = await page.evaluate(() => window.__cc.stage.asset.debug.simulateDragons(300));
   check(sim.insideBuilding === 0 && sim.outsideGlass === 0, `5 minutes of flight: ${sim.insideBuilding} frames in a building, ${sim.outsideGlass} outside the glass (closest pass ${sim.minClearance.toFixed(1)} m)`);
