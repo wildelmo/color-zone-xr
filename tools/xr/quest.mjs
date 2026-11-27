@@ -160,7 +160,14 @@ export async function openQuest(browser, url, { query = '?instant', size = [1280
     if (m.type() === 'error' && !/GPU stall|ReadPixels/i.test(m.text())) errors.push(m.text());
   });
   await page.addInitScript({ content: fs.readFileSync(IWER, 'utf8') + BOOT });
+  // say so if the page ever goes somewhere or dies under us (helps diagnose CI)
+  let loaded = false;
+  page.on('framenavigated', (f) => {
+    if (f === page.mainFrame() && loaded) console.log(`  [quest] the page navigated to ${f.url()}`);
+  });
+  page.on('crash', () => console.log('  [quest] the page crashed'));
   await page.goto(url + 'index.html' + query, { waitUntil: 'load' });
+  loaded = true;
   await page.waitForFunction(() => window.__cc && window.__cc.frame > 3, null, { timeout: 60000 });
   await helpers(page);
   const q = new Quest(page, { out });
