@@ -132,6 +132,27 @@ const views = await p.evaluate(async () => {
   }
   // both dragons, close (held still for the picture; placed at shot time)
   a.debug.dragons.forEach((d, i) => v.push({ name: `dragon-${i}`, dragon: i }));
+  // the small things: a flag on its pole, a guard on the wall, the bridge and well lamps, string lights
+  const tn = a.debug.town;
+  const outward = (q, d, up) => {
+    const l = Math.hypot(q.x, q.z) || 1;
+    return w(q.x + (q.x / l) * d, q.y + up, q.z + (q.z / l) * d);
+  };
+  const fl = tn.flagSpecs[2] || tn.flagSpecs[0];
+  // side-on to the wind, so the pennant shows its face
+  if (fl) {
+    const px = -Math.sin(0.4), pz = Math.cos(0.4), wx = Math.cos(0.4), wz = Math.sin(0.4);
+    v.push({ name: 'flagpole', at: w(fl.p.x + px * 3 + wx * 0.5, fl.p.y - 0.1, fl.p.z + pz * 3 + wz * 0.5), look: w(fl.p.x + wx * 0.5, fl.p.y - 0.5, fl.p.z + wz * 0.5) });
+  }
+  v.push({ name: 'guard', guard: 0 });
+  for (const [name, i] of [['bridge-lamp', 2], ['well-lamp', 4]]) {
+    const lp = tn.lanterns[i];
+    v.push({ name, at: outward(lp, 2.2, 0.8), look: w(lp.x, lp.y - 0.4, lp.z) });
+  }
+  if (tn.fairy.length) {
+    const fp = tn.fairy[Math.floor(tn.fairy.length / 2)].p;
+    v.push({ name: 'string-lights', at: outward(fp, -2.0, -0.6), look: w(fp.x, fp.y, fp.z) });
+  }
   // down the lower ring street
   const hill = T.hill;
   const sa = gate - 0.6;
@@ -144,6 +165,24 @@ const views = await p.evaluate(async () => {
 
 for (const vw of views) {
   if (only && !only.includes(vw.name)) continue;
+  if (vw.guard !== undefined) {
+    // held still for the picture; placed at shot time
+    Object.assign(
+      vw,
+      await p.evaluate((i) => {
+        const a = window.__cc.stage.asset;
+        const tn = a.debug.town;
+        a.debug.freezeTown = true;
+        const THREE = window.__qd.THREE;
+        const m = new THREE.Matrix4();
+        tn.walkers.mesh.getMatrixAt(i, m);
+        const g = new THREE.Vector3().setFromMatrixPosition(m);
+        const l = Math.hypot(g.x, g.z);
+        const w = (x, y, z) => a.debug.island.localToWorld(new THREE.Vector3(x, y, z)).toArray();
+        return { at: w(g.x * (1 - 2.2 / l), g.y + 2.4, g.z * (1 - 2.2 / l)), look: w(g.x, g.y + 0.8, g.z) };
+      }, vw.guard),
+    );
+  }
   if (vw.dragon !== undefined) {
     Object.assign(
       vw,
@@ -168,6 +207,7 @@ for (const vw of views) {
   await run({ cmd: 'wait', frames: 3 });
   await run({ cmd: 'shot', file: `${vw.name}.png` });
   if (vw.dragon !== undefined) await p.evaluate(() => (window.__cc.stage.asset.debug.freezeDragons = false));
+  if (vw.guard !== undefined) await p.evaluate(() => (window.__cc.stage.asset.debug.freezeTown = false));
   console.log('shot', vw.name, vw.style ?? '');
 }
 

@@ -174,15 +174,35 @@ export function makeDetailer(bag, rnd, { hero = true } = {}) {
       const ez = sgn * (run - 0.04), ey = -drop + 0.24;
       const lip = new THREE.CylinderGeometry(0.17, 0.17, len + 2 * ohg + 0.06, 7, 1).rotateZ(Math.PI / 2);
       bag.add(lip, fr.clone().multiply(mat(0, ey, ez, 0, 0, 0, 1, 0.8, 1)), 'snow', '#f4f8ff', attrs);
-      // string lights along the street-side eave of some houses
+      // string lights along the street-side eave of some houses: a dark wire
+      // hooked under the eave every few bulbs, sagging between the hooks,
+      // with a bulb hanging from it every 0.32
       if (house.lights && sgn === 1) {
         const m = Math.floor((len + 2 * ohg) / 0.32);
+        const per = 4; // bulbs between hooks
         const pal = house.lights;
+        const x0 = -len / 2 - ohg + 0.08, x1 = len / 2 + ohg - 0.08;
+        const zw = sgn * (run - 0.03), yh = -drop - 0.025;
+        const wireAt = (t) => {
+          const f = (t * m) / per; // position between hooks
+          const y = yh - Math.sin(Math.PI * (f - Math.floor(f))) * 0.07;
+          return new THREE.Vector3(x0 + t * (x1 - x0), y, zw);
+        };
+        const steps = m * 2;
+        let prev = wireAt(0);
+        for (let k = 1; k <= steps; k++) {
+          const cur = wireAt(k / steps);
+          const mid = prev.clone().add(cur).multiplyScalar(0.5);
+          const d = cur.clone().sub(prev);
+          const seg = new THREE.CylinderGeometry(0.012, 0.012, d.length() + 0.004, 4);
+          seg.rotateZ(-Math.atan2(d.x, d.y));
+          bag.add(seg, fr.clone().multiply(mat(mid.x, mid.y, mid.z)), 'wood', '#1a1816', attrs);
+          prev = cur;
+        }
         for (let k = 0; k <= m; k++) {
-          const t = k / m;
-          const x = -len / 2 - ohg + 0.08 + t * (len + 2 * ohg - 0.16);
-          const sagY = -Math.abs(Math.sin(t * Math.PI * Math.max(2, Math.round(m / 4)))) * 0.1;
-          fairy.push({ p: new THREE.Vector3(x, -drop - 0.06 + sagY, ez + sgn * 0.06).applyMatrix4(fr), color: pal[k % pal.length] });
+          const w = wireAt(k / m);
+          if (k % per === 0) box(fr, 0.03, 0.05, 0.03, w.x, w.y + 0.02, w.z, 'wood', '#1a1816', attrs); // a hook
+          fairy.push({ p: new THREE.Vector3(w.x, w.y - 0.045, w.z).applyMatrix4(fr), color: pal[k % pal.length] });
         }
       }
       // icicles

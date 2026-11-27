@@ -186,6 +186,7 @@ The test boots the gallery and plays through the real interactions:
 - entering VR off-centre and landing at the table
 - the Exit button and hold-B exit
 - for the snow globe: its town and perches, the dragons flying inside the glass, shaking it into a blizzard, Up close, and five simulated minutes of dragon flight that must never enter a building or leave the glass
+- that the town's small things are attached: every lantern and string light hangs from a lamp, a post or a wire, the guards walk on top of the wall (never on air or through a tower), and every flag flies from its pole (`tools/test/floaters.js`)
 - the whole visit again on **Meta's own WebXR emulator** ([IWER](https://github.com/meta-quest/immersive-web-emulation-runtime), the emulator behind Meta's Immersive Web SDK) as a Quest 3 with Touch Plus controllers, driven only through the controls: pointing at a pedestal and pulling the trigger, the Up close button, walking round the walkway with the stick, tapping B, squeezing the grip to pick the globe up and shaking it, and the Exit button
 
 It also writes the screenshots in `docs/screenshots`.

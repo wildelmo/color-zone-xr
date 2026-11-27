@@ -448,6 +448,15 @@ if (want('globe')) {
   await page.evaluate(() => window.__xrEmu.setHead([0, 1.6, 0], window.__xrEmu.quatYawPitch(0, -0.3)));
   await page.evaluate(() => window.__xrEmu.waitFrames(6));
   await snap(page, '17-vr-up-close.png', { x: 0, y: 0, width: 800, height: 800 });
+  // the small things are attached: every light hangs from a lamp, post or wire, the guards walk on the wall, flags fly from poles
+  const fl = await page.evaluate(async () => {
+    const THREE = await import('three');
+    const { findFloaters } = await import('/tools/test/floaters.js');
+    return findFloaters(THREE, window.__cc.stage.asset.debug.town, { seconds: 300, step: 3 });
+  });
+  check(fl.lights.length === 0, `every light hangs from something (${fl.counts.lanterns} lanterns, ${fl.counts.stringLights} string lights${fl.lights.length ? `; loose: ${JSON.stringify(fl.lights.slice(0, 3))}` : ''})`);
+  check(fl.guards.floating === 0 && fl.guards.sunk === 0 && fl.guards.inTower === 0, `the guards walk on the wall-walk (${fl.guards.samples} positions: ${fl.guards.floating} on air, ${fl.guards.sunk} sunk, ${fl.guards.inTower} inside towers)`);
+  check(fl.flags.length === 0, `all ${fl.counts.flags} flags fly from their poles`);
   // five simulated minutes of dragon flight: never inside a building, never outside the glass
   const sim = await page.evaluate(() => window.__cc.stage.asset.debug.simulateDragons(300));
   check(sim.insideBuilding === 0 && sim.outsideGlass === 0, `5 minutes of flight: ${sim.insideBuilding} frames in a building, ${sim.outsideGlass} outside the glass (closest pass ${sim.minClearance.toFixed(1)} m)`);
